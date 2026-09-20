@@ -2,302 +2,130 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minimalist Twitch Chat for OBS</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Custom Transparent Twitch Chat</title>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        /* --- CUSTOMIZE YOUR CHAT STYLING HERE --- */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #chat-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .chat-message {
+            background: rgba(0, 0, 0, 0.65); /* Semi-transparent message bubble */
+            color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 18px;
+            line-height: 1.4;
+            word-break: break-word;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            animation: fadeIn 0.25s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .username {
+            font-weight: bold;
+            color: #a970ff; /* Twitch light purple accent color */
+            margin-right: 6px;
+        }
+
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
+            from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .chat-fade-in { animation: fadeIn 0.2s ease-out forwards; }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+<body>
 
-    <!-- SETUP VIEW (Shown when no channel query parameter is present) -->
-    <div id="setupView" class="flex-1 flex items-center justify-center p-4">
-        <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
-            <div class="flex items-center space-x-3">
-                <div class="bg-purple-600 text-white p-2.5 rounded-xl shadow-lg shadow-purple-600/30">
-                    <i class="fa-brands fa-twitch text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="font-bold text-lg leading-tight text-white">Twitch Chat OBS Generator</h1>
-                    <p class="text-xs text-slate-400">Host on GitHub Pages & add as an OBS Browser Source</p>
-                </div>
-            </div>
-
-            <div class="space-y-4">
-                <!-- Channel Input -->
-                <div class="space-y-1.5">
-                    <label class="text-xs font-medium text-slate-300 uppercase tracking-wider">Twitch Channel Name</label>
-                    <input type="text" id="inputChannel" placeholder="e.g. ninja" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-purple-500">
-                </div>
-
-                <!-- Basic Styles Grid -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="space-y-1">
-                        <label class="text-xs font-medium text-slate-300">Font Size (px)</label>
-                        <input type="number" id="inputFontSize" value="14" min="10" max="28" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-purple-500">
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-xs font-medium text-slate-300">Background Opacity</label>
-                        <select id="inputOpacity" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-purple-500">
-                            <option value="0.8">Dark (80%)</option>
-                            <option value="0.5">Medium (50%)</option>
-                            <option value="0.2">Light (20%)</option>
-                            <option value="0">Fully Transparent (0%)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Toggles -->
-                <div class="grid grid-cols-2 gap-2 pt-1">
-                    <label class="flex items-center space-x-2 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-                        <input type="checkbox" id="inputBadges" checked class="accent-purple-500 rounded">
-                        <span class="text-xs text-slate-300">Show Badges</span>
-                    </label>
-                    <label class="flex items-center space-x-2 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-                        <input type="checkbox" id="inputFade" class="accent-purple-500 rounded">
-                        <span class="text-xs text-slate-300">Fade out (15s)</span>
-                    </label>
-                </div>
-
-                <!-- Generated OBS Link Output -->
-                <div class="space-y-1.5 pt-2">
-                    <label class="text-xs font-medium text-purple-400 uppercase tracking-wider flex items-center justify-between">
-                        <span>OBS Browser Source URL</span>
-                        <span class="text-[10px] text-slate-400 lowercase">Ready for GitHub Pages</span>
-                    </label>
-                    <div class="flex space-x-2">
-                        <input type="text" id="outputUrl" readonly class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-purple-300 font-mono focus:outline-none">
-                        <button onclick="copyObsUrl()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0">
-                            <i class="fa-solid fa-copy mr-1"></i> Copy
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="flex space-x-2 pt-2">
-                    <button onclick="launchChat()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2.5 rounded-lg text-sm font-semibold transition shadow-md shadow-purple-600/20">
-                        Launch Live View
-                    </button>
-                    <button onclick="launchDemo()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2.5 rounded-lg text-sm font-medium transition border border-slate-700">
-                        Test Demo Mode
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- CHAT VIEW (Shown when ?channel= query parameter is present) -->
-    <div id="chatView" class="hidden flex-1 flex flex-col justify-end p-4 overflow-hidden relative w-full h-screen">
-        <div id="chatContainer" class="flex flex-col space-y-2 w-full max-w-xl overflow-y-auto">
-            <!-- Messages injected dynamically -->
-        </div>
-    </div>
+    <div id="chat-container"></div>
 
     <script>
-        // Real-time URL generator updates on input changes
-        const inputChannel = document.getElementById('inputChannel');
-        const inputFontSize = document.getElementById('inputFontSize');
-        const inputOpacity = document.getElementById('inputOpacity');
-        const inputBadges = document.getElementById('inputBadges');
-        const inputFade = document.getElementById('inputFade');
-        const outputUrl = document.getElementById('outputUrl');
+        // Pulls channel name from URL query parameter (e.g. ?channel=myname)
+        const urlParams = new URLSearchParams(window.location.search);
+        const channel = urlParams.get('channel') || 'monstercat'; // Fallback if none provided
 
-        function updateObsUrl() {
-            const channel = inputChannel.value.trim() || 'ninja';
-            const size = inputFontSize.value;
-            const opacity = inputOpacity.value;
-            const badges = inputBadges.checked ? '1' : '0';
-            const fade = inputFade.checked ? '1' : '0';
+        const chatContainer = document.getElementById('chat-container');
+        const maxMessages = 30; // Keeps DOM light by clearing old messages
 
-            const baseUrl = window.location.origin + window.location.pathname;
-            const fullUrl = `${baseUrl}?channel=${encodeURIComponent(channel)}&size=${size}&opacity=${opacity}&badges=${badges}&fade=${fade}`;
-            outputUrl.value = fullUrl;
-        }
-
-        [inputChannel, inputFontSize, inputOpacity, inputBadges, inputFade].forEach(el => {
-            el.addEventListener('input', updateObsUrl);
-            el.addEventListener('change', updateObsUrl);
-        });
-
-        // Initialize URL box on load
-        window.addEventListener('DOMContentLoaded', () => {
-            const params = new URLSearchParams(window.location.search);
-            const channelParam = params.get('channel');
-
-            if (channelParam) {
-                // Switch to Chat View mode for OBS
-                document.getElementById('setupView').classList.add('hidden');
-                document.getElementById('chatView').classList.remove('hidden');
-                document.body.style.background = 'transparent';
-                
-                const fontSize = params.get('size') || '14';
-                const opacity = parseFloat(params.get('opacity') ?? '0.8');
-                const showBadges = params.get('badges') !== '0';
-                const enableFade = params.get('fade') === '1';
-
-                if (channelParam === 'demo') {
-                    startDemoMode(fontSize, opacity, showBadges, enableFade);
-                } else {
-                    connectTwitchChat(channelParam, fontSize, opacity, showBadges, enableFade);
-                }
-            } else {
-                updateObsUrl();
-            }
-        });
-
-        function copyObsUrl() {
-            outputUrl.select();
-            document.execCommand('copy');
-            const copyBtn = event.currentTarget;
-            copyBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copied!';
-            setTimeout(() => {
-                copyBtn.innerHTML = '<i class="fa-solid fa-copy mr-1"></i> Copy';
-            }, 2000);
-        }
-
-        function launchChat() {
-            const ch = inputChannel.value.trim();
-            if (!ch) {
-                alert('Please enter a Twitch channel name.');
-                return;
-            }
-            window.location.href = outputUrl.value;
-        }
-
-        function launchDemo() {
-            const base = window.location.origin + window.location.pathname;
-            window.location.href = `${base}?channel=demo&size=${inputFontSize.value}&opacity=${inputOpacity.value}&badges=${inputBadges.checked ? '1' : '0'}&fade=${inputFade.checked ? '1' : '0'}`;
-        }
-
-        // Chat message rendering engine
-        function appendMessage(container, username, color, badgeHtml, text, fontSize, opacity, showBadges, enableFade) {
-            const chatContainer = document.getElementById(container);
-            
-            // Calculate rgba background
-            const bgRgba = `rgba(15, 23, 42, ${opacity})`;
-
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `chat-fade-in flex items-start space-x-2 p-2.5 rounded-lg shadow-sm border border-slate-800/40 text-slate-100`;
-            msgDiv.style.backgroundColor = bgRgba;
-            msgDiv.style.fontSize = `${fontSize}px`;
-            msgDiv.style.fontFamily = 'Inter, sans-serif';
-
-            let badgesMarkup = '';
-            if (showBadges && badgeHtml) {
-                badgesMarkup = `<span class="inline-flex items-center space-x-1">${badgeHtml}</span>`;
-            }
-
-            msgDiv.innerHTML = `
-                ${badgesMarkup}
-                <strong class="font-bold shrink-0" style="color: ${color || '#a855f7'}">${username}:</strong>
-                <span class="flex-1 break-words">${escapeHtml(text)}</span>
-            `;
-
-            chatContainer.appendChild(msgDiv);
-
-            // Limit message history
-            while (chatContainer.children.length > 30) {
-                chatContainer.removeChild(chatContainer.firstChild);
-            }
-
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-
-            if (enableFade) {
-                setTimeout(() => {
-                    msgDiv.style.transition = 'opacity 0.5s ease';
-                    msgDiv.style.opacity = '0';
-                    setTimeout(() => msgDiv.remove(), 500);
-                }, 15000);
-            }
-        }
-
-        function escapeHtml(text) {
-            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-
-        // Demo simulation mode
-        function startDemoMode(fontSize, opacity, showBadges, enableFade) {
-            const demoUsers = [
-                { name: 'StreamFan99', color: '#ff4500', badge: '<span class="bg-amber-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">VIP</span>', text: 'Hey everyone! This OBS chat looks so clean and minimalist.' },
-                { name: 'PixelGamer', color: '#00fa9a', badge: '<span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">SUB</span>', text: 'GitHub Pages hosting makes this so easy to use as a browser source.' },
-                { name: 'CoffeeAddict', color: '#da70d6', badge: '<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">MOD</span>', text: 'Welcome to the stream! Remember to drop a follow. Kappa' },
-                { name: 'CyberSamurai', color: '#1e90ff', badge: '', text: 'That play was unbelievable!! PogChamp' }
-            ];
-
-            let index = 0;
-            setInterval(() => {
-                const u = demoUsers[index % demoUsers.length];
-                appendMessage('chatContainer', u.name, u.color, u.badge, u.text, fontSize, opacity, showBadges, enableFade);
-                index++;
-            }, 3000);
-        }
-
-        // Real Twitch IRC WebSocket connection
-        function connectTwitchChat(channel, fontSize, opacity, showBadges, enableFade) {
+        function connect() {
+            // Connect anonymously to Twitch IRC WebSocket
             const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
             ws.onopen = () => {
-                ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-                ws.send('NICK justinfan' + Math.floor(Math.random() * 80000));
+                ws.send('PASS SCHMOOPIIE');
+                ws.send('NICK justinfan' + Math.floor(Math.random() * 89999 + 10000));
                 ws.send('JOIN #' + channel.toLowerCase());
             };
 
             ws.onmessage = (event) => {
-                const raw = event.data;
-                if (raw.startsWith('PING')) {
-                    ws.send('PONG ' + raw.split(' ')[1]);
+                const message = event.data;
+                
+                // Respond to Twitch PING to keep connection alive
+                if (message.startsWith('PING')) {
+                    ws.send('PONG ' + message.split(' ')[1]);
                     return;
                 }
 
-                if (raw.includes('PRIVMSG')) {
+                // Parse standard chat messages (PRIVMSG)
+                if (message.includes('PRIVMSG')) {
                     try {
-                        const channelPart = raw.split(' ').find(p => p.startsWith('#'));
-                        const userTagPart = raw.substring(0, raw.indexOf('PRIVMSG'));
-                        const messagePart = raw.substring(raw.indexOf('PRIVMSG') + channelPart.length + 2);
-
-                        let userColor = '#a855f7';
-                        let displayName = 'Viewer';
-                        let badgeHtml = '';
-
-                        if (userTagPart.includes('color=')) {
-                            const colorMatch = userTagPart.match(/color=([^;]*)/);
-                            if (colorMatch && colorMatch[1]) userColor = colorMatch[1];
-                        }
-                        if (userTagPart.includes('display-name=')) {
-                            const nameMatch = userTagPart.match(/display-name=([^;]*)/);
-                            if (nameMatch && nameMatch[1]) displayName = nameMatch[1];
-                        } else {
-                            const nickMatch = userTagPart.match(/:([^!]*)!/);
-                            if (nickMatch) displayName = nickMatch[1];
-                        }
-
-                        if (userTagPart.includes('moderator/1')) {
-                            badgeHtml += '<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">MOD</span>';
-                        }
-                        if (userTagPart.includes('subscriber/')) {
-                            badgeHtml += '<span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">SUB</span>';
-                        }
-
-                        appendMessage('chatContainer', displayName, userColor, badgeHtml, messagePart, fontSize, opacity, showBadges, enableFade);
-                    } catch (err) {
-                        console.error("Error parsing message", err);
+                        const parsedUser = message.match(/:([^!]+)!/)[1];
+                        const parsedMessage = message.split('PRIVMSG')[1].split(':').slice(1).join(':').trim();
+                        
+                        appendMessage(parsedUser, parsedMessage);
+                    } catch (e) {
+                        console.error('Error parsing chat message', e);
                     }
                 }
             };
 
-            ws.onerror = () => {
-                appendMessage('chatContainer', 'System', '#ef4444', '', 'Failed to connect to Twitch IRC. Falling back to demo mode.', fontSize, opacity, showBadges, enableFade);
-                startDemoMode(fontSize, opacity, showBadges, enableFade);
+            ws.onclose = () => {
+                // Auto-reconnect if connection drops
+                setTimeout(connect, 5000);
             };
         }
+
+        function appendMessage(user, text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message';
+            
+            const userSpan = document.createElement('span');
+            userSpan.className = 'username';
+            userSpan.textContent = user + ':';
+            
+            const textSpan = document.createElement('span');
+            textSpan.textContent = text;
+            
+            msgDiv.appendChild(userSpan);
+            msgDiv.appendChild(textSpan);
+            
+            chatContainer.appendChild(msgDiv);
+
+            // Prune old messages to prevent overflowing the layout
+            while (chatContainer.children.length > maxMessages) {
+                chatContainer.removeChild(chatContainer.firstChild);
+            }
+        }
+
+        connect();
     </script>
 </body>
 </html>
