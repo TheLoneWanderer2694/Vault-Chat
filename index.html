@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Prevents the favicon 404 error -->
+    <link rel="icon" href="data:,">
     <title>Custom Transparent Twitch Chat</title>
     <style>
         body, html {
@@ -37,8 +39,6 @@
             word-break: break-word;
             text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            
-            /* Fade-out transition styling */
             opacity: 1;
             transition: opacity 1s ease-out;
         }
@@ -63,9 +63,7 @@
         const channel = urlParams.get('channel') || 'monstercat';
 
         const chatContainer = document.getElementById('chat-container');
-        
-        // --- CONFIGURATION ---
-        const messageDisplayTime = 15000; // Time in milliseconds before message starts fading (15 seconds)
+        const messageDisplayTime = 15000; // Time in ms before fading out (15 seconds)
 
         function connect() {
             const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
@@ -117,11 +115,8 @@
             
             chatContainer.appendChild(msgDiv);
 
-            // Trigger the fade-out after the specified display time
             setTimeout(() => {
                 msgDiv.classList.add('fade-out');
-                
-                // Completely remove the element from DOM after the transition animation finishes (1 second later)
                 setTimeout(() => {
                     if (msgDiv.parentElement) {
                         msgDiv.remove();
