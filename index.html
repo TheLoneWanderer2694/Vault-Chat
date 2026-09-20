@@ -156,9 +156,10 @@
         function copyObsUrl() {
             outputUrl.select();
             document.execCommand('copy');
-            event.currentTarget.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copied!';
+            const copyBtn = event.currentTarget;
+            copyBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copied!';
             setTimeout(() => {
-                event.currentTarget.innerHTML = '<i class="fa-solid fa-copy mr-1"></i> Copy';
+                copyBtn.innerHTML = '<i class="fa-solid fa-copy mr-1"></i> Copy';
             }, 2000);
         }
 
@@ -300,11 +301,3 @@
     </script>
 </body>
 </html>
-```
-^^^eof
-
-### Summary of Features:
-1. **Two States in One File**: Automatically detects if `?channel=` is present in the URL. If absent, it renders the setup card with styling controls. If present, it switches instantly to a transparent OBS chat box.
-2. **Real-time Twitch IRC WebSocket**: Connects directly to Twitch IRC (`wss://irc-ws.chat.twitch.tv:443`) anonymously so you don't need API keys or OAuth tokens.
-3. **Demo Mode**: Includes a `Test Demo Mode` button to preview messages immediately without an active live stream.
-4. **GitHub Pages Ready**: Save as `index.html`, upload to a GitHub repository, enable GitHub Pages, and paste your URL straight into an OBS Browser Source.
