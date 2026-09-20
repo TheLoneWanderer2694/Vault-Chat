@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Custom Transparent Twitch Chat</title>
     <style>
+        /* --- CUSTOMIZE YOUR CHAT STYLING HERE --- */
         body, html {
             margin: 0;
             padding: 0;
@@ -28,7 +29,7 @@
         }
 
         .chat-message {
-            background: rgba(0, 0, 0, 0.65);
+            background: rgba(0, 0, 0, 0.65); /* Semi-transparent message bubble */
             color: #ffffff;
             padding: 8px 12px;
             border-radius: 8px;
@@ -36,21 +37,19 @@
             line-height: 1.4;
             word-break: break-word;
             text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            animation: fadeIn 0.25s ease-in-out;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            
-            /* Fade-out transition styling */
-            opacity: 1;
-            transition: opacity 1s ease-out;
-        }
-
-        .chat-message.fade-out {
-            opacity: 0;
         }
 
         .username {
             font-weight: bold;
-            color: #a970ff;
+            color: #a970ff; /* Twitch light purple accent color */
             margin-right: 6px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
@@ -59,15 +58,15 @@
     <div id="chat-container"></div>
 
     <script>
+        // Pulls channel name from URL query parameter (e.g. ?channel=myname)
         const urlParams = new URLSearchParams(window.location.search);
-        const channel = urlParams.get('channel') || 'monstercat';
+        const channel = urlParams.get('channel') || 'monstercat'; // Fallback if none provided
 
         const chatContainer = document.getElementById('chat-container');
-        
-        // --- CONFIGURATION ---
-        const messageDisplayTime = 15000; // Time in milliseconds before message starts fading (15 seconds)
+        const maxMessages = 30; // Keeps DOM light by clearing old messages
 
         function connect() {
+            // Connect anonymously to Twitch IRC WebSocket
             const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
             ws.onopen = () => {
@@ -79,11 +78,13 @@
             ws.onmessage = (event) => {
                 const message = event.data;
                 
+                // Respond to Twitch PING to keep connection alive
                 if (message.startsWith('PING')) {
                     ws.send('PONG ' + message.split(' ')[1]);
                     return;
                 }
 
+                // Parse standard chat messages (PRIVMSG)
                 if (message.includes('PRIVMSG')) {
                     try {
                         const parsedUser = message.match(/:([^!]+)!/)[1];
@@ -97,6 +98,7 @@
             };
 
             ws.onclose = () => {
+                // Auto-reconnect if connection drops
                 setTimeout(connect, 5000);
             };
         }
@@ -117,17 +119,10 @@
             
             chatContainer.appendChild(msgDiv);
 
-            // Trigger the fade-out after the specified display time
-            setTimeout(() => {
-                msgDiv.classList.add('fade-out');
-                
-                // Completely remove the element from DOM after the transition animation finishes (1 second later)
-                setTimeout(() => {
-                    if (msgDiv.parentElement) {
-                        msgDiv.remove();
-                    }
-                }, 1000);
-            }, messageDisplayTime);
+            // Prune old messages to prevent overflowing the layout
+            while (chatContainer.children.length > maxMessages) {
+                chatContainer.removeChild(chatContainer.firstChild);
+            }
         }
 
         connect();
