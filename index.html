@@ -271,6 +271,481 @@
             <div class="row">
                 <div class="control-group">
                     <label>Glass Blur (px)</label>
+                    <input type="number" id="cfg-blur" value="0" min="0" max="25">
+                </div>
+                <div class="control-group">
+                    <label>Auto-Fade (Seconds)</label>
+                    <input type="number" id="cfg-fade" value="0" min="0" max="60">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="control-group">
+                    <label>Background Opacity</label>
+                    <input type="range" id="cfg-bgopacity" min="0" max="1" step="0.05" value="0.75">
+                </div>
+                <div class="control-group">
+                    <label>Text-to-Speech (TTS)</label>
+                    <select id="cfg-tts">
+                        <option value="off">Disabled</option>
+                        <option value="on">Read All Messages</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Banned / Censored Words (comma-separated)</label>
+                <input type="text" id="cfg-badwords" placeholder="badword1, spamphrase">
+            </div>
+
+            <div class="control-group">
+                <label>Simulated Stream Testing</label>
+                <div class="row">
+                    <button class="btn btn-secondary" id="btn-test-chat">Send Chat</button>
+                    <button class="btn btn-secondary" id="btn-test-sub" style="background: #a93226;">Simulate Sub</button>
+                </div>
+            </div>
+
+            <div class="control-group" style="margin-top: auto;">
+                <label>OBS Browser Source URL Link</label>
+                <div class="code-box" id="obs-url-output">Generating link...</div>
+                <button class="btn" id="btn-gen-url" style="margin-top: 6px;">Copy OBS Browser Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PREVIEW / CHAT STAGE -->
+    <div id="preview-stage">
+        <div class="preview-watermark" id="mode-indicator">Studio Preview Mode</div>
+        <div id="chat-container"></div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const channel = urlParams.get('channel');
+        const isObs = urlParams.has('obs') || urlParams.has('transparent');
+
+        const chatContainer = document.getElementById('chat-container');
+
+        // Apply URL settings safely
+        if (urlParams.has('font')) document.documentElement.style.setProperty('--font-family', urlParams.get('font'));
+        if (urlParams.has('size')) document.documentElement.style.setProperty('--font-size', urlParams.get('size') + 'px');
+        if (urlParams.has('fade')) document.documentElement.style.setProperty('--fade-time', urlParams.get('fade') + 's');
+        if (urlParams.has('blur')) document.documentElement.style.setProperty('--blur-val', urlParams.get('blur') + 'px');
+        if (urlParams.has('anim')) document.documentElement.style.setProperty('--anim-style', urlParams.get('anim'));
+        if (urlParams.has('opacity')) {
+            document.documentElement.style.setProperty('--bg-color', `rgba(0, 0, 0, ${urlParams.get('opacity')})`);
+        }
+        if (urlParams.has('layout') && urlParams.get('layout') === 'minimal') {
+            document.documentElement.style.setProperty('--border-radius', '0px');
+            document.documentElement.style.setProperty('--bg-color', 'transparent');
+        }
+
+        if (isObs) {
+            document.body.classList.add('obs-mode');
+            const panel = document.getElementById('control-panel');
+            if (panel) panel.style.display = 'none';
+            const stage = document.getElementById('preview-stage');
+            if (stage) {
+                stage.style.background = 'transparent';
+                stage.style.padding = '0';
+            }
+        }
+
+        function cleanMessage(text) {
+            const badWordsParam = urlParams.get('badwords') || '';
+            if (!badWordsParam) return text;
+            const words = badWordsParam.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);
+            let cleaned = text;
+            words.forEach(bw => {
+                const regex = new RegExp(bw, 'gi');
+                cleaned = cleaned.replace(regex, '***');
+            });
+            return cleaned;
+        }
+
+        function speakText(text) {
+            const ttsParam = isObs ? urlParams.get('tts') : document.getElementById('cfg-tts')?.value;
+            if (ttsParam === 'on' && 'speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function addChatMessage(username, message, color = '#9146FF', badgesObj = {}, isSub = false) {
+            const finalMsg = cleanMessage(message);
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message';
+            if (isSub) messageDiv.classList.add('highlight-sub');
+
+            const badgesSpan = document.createElement('span');
+            badgesSpan.className = 'badges';
+            if (badgesObj.broadcaster) {
+                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f339dcf8309e/3" title="Broadcaster">';
+            } else if (badgesObj.moderator) {
+                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/3" title="Moderator">';
+            } else if (badgesObj.subscriber || isSub) {
+                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5d9c221a-75a7-4712-9c4d-62025175cf57/3" title="Subscriber">';
+            }
+            messageDiv.appendChild(badgesSpan);
+
+            const userSpan = document.createElement('span');
+            userSpan.className = 'username';
+            userSpan.style.color = color || '#bf94ff';
+            userSpan.textContent = username + ':';
+            messageDiv.appendChild(userSpan);
+
+            const textSpan = document.createElement('span');
+            textSpan.textContent = finalMsg;
+            messageDiv.appendChild(textSpan);
+
+            chatContainer.appendChild(messageDiv);
+
+            if (chatContainer.children.length > 35) {
+                chatContainer.removeChild(chatContainer.firstChild);
+            }
+
+            speakText(username + ' says ' + finalMsg);
+
+            const fadeTime = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fade-time')) || 0;
+            if (fadeTime > 0 && isObs) {
+                setTimeout(() => {
+                    messageDiv.classList.add('fade-out');
+                    setTimeout(() => messageDiv.remove(), 400);
+                }, fadeTime * 1000);
+            }
+        }
+
+        // Initialize Twitch chat socket if channel parameter exists
+        if (channel) {
+            try {
+                const client = new tmi.Client({ channels: [channel] });
+                client.connect().catch(err => console.error("TMI Connection Error:", err));
+                
+                client.on('message', (target, context, message, self) => {
+                    if (self) return;
+                    addChatMessage(
+                        context['display-name'] || context.username,
+                        message,
+                        context.color,
+                        context.badges || {},
+                        false
+                    );
+                });
+
+                client.on('subscription', (target, username, method, message, userstate) => {
+                    addChatMessage(username, `Subscribed with ${method.planName || 'Prime'}! 🎉`, '#ff4500', { subscriber: true }, true);
+                });
+            } catch (e) {
+                console.error("Failed to initialize tmi client:", e);
+            }
+        }
+
+        // Studio builder interface logic (disabled inside OBS)
+        if (!isObs) {
+            const sampleNames = ['AriaGamer', 'StreamGlitch', 'VortexEcho', 'PixelQueen', 'RogueCoder'];
+            const sampleMsgs = [
+                'This advanced layout with glassmorphism looks awesome!',
+                'Let us go get that Victory Royale!',
+                'Is the text-to-speech working properly?',
+                'Amazing chat customizer tool for OBS!'
+            ];
+
+            const btnTestChat = document.getElementById('btn-test-chat');
+            if (btnTestChat) {
+                btnTestChat.addEventListener('click', () => {
+                    const name = sampleNames[Math.floor(Math.random() * sampleNames.length)];
+                    const msg = sampleMsgs[Math.floor(Math.random() * sampleMsgs.length)];
+                    const colors = ['#FF4500', '#00FF7F', '#1E90FF', '#FF69B4', '#FFD700'];
+                    addChatMessage(name, msg, colors[Math.floor(Math.random() * colors.length)], { moderator: true }, false);
+                });
+            }
+
+            const btnTestSub = document.getElementById('btn-test-sub');
+            if (btnTestSub) {
+                btnTestSub.addEventListener('click', () => {
+                    addChatMessage('TwitchLegend', 'Just subscribed for 6 months in a row! Let us go!', '#ff4500', { subscriber: true }, true);
+                });
+            }
+
+            function updateLinkPreview() {
+                const ch = document.getElementById('cfg-channel')?.value.trim() || 'your_channel';
+                const layout = document.getElementById('cfg-layout')?.value || 'bubble';
+                const font = document.getElementById('cfg-font')?.value || "'Inter', sans-serif";
+                const size = document.getElementById('cfg-fontsize')?.value || '16';
+                const fade = document.getElementById('cfg-fade')?.value || '0';
+                const blur = document.getElementById('cfg-blur')?.value || '0';
+                const anim = document.getElementById('cfg-anim')?.value || 'slideIn';
+                const opacity = document.getElementById('cfg-bgopacity')?.value || '0.75';
+                const tts = document.getElementById('cfg-tts')?.value || 'off';
+                const badwords = document.getElementById('cfg-badwords')?.value || '';
+
+                const baseUrl = window.location.href.split('?')[0];
+                const generated = `${baseUrl}?channel=${ch}&obs=true&layout=${layout}&font=${encodeURIComponent(font)}&size=${size}&fade=${fade}&blur=${blur}&anim=${anim}&opacity=${opacity}&tts=${tts}&badwords=${encodeURIComponent(badwords)}`;
+                
+                const outputBox = document.getElementById('obs-url-output');
+                if (outputBox) outputBox.textContent = generated;
+            }
+
+            document.querySelectorAll('#control-panel input, #control-panel select').forEach(el => {
+                el.addEventListener('input', updateLinkPreview);
+            });
+
+            const btnGenUrl = document.getElementById('btn-gen-url');
+            if (btnGenUrl) {
+                btnGenUrl.addEventListener('click', () => {
+                    updateLinkPreview();
+                    const linkText = document.getElementById('obs-url-output')?.textContent || '';
+                    navigator.clipboard.writeText(linkText);
+                    alert('Advanced OBS Browser Link copied to clipboard!');
+                });
+            }
+
+            addChatMessage('SystemStudio', 'Welcome to Pro Twitch Chat Studio! Build your custom layout and copy the link to OBS.', '#00ffcc', { broadcaster: true }, false);
+            updateLinkPreview();
+        }
+    </script>
+</body>
+</html>            display: flex;
+            height: 100vh;
+        }
+
+        /* Dashboard Studio Panel */
+        #control-panel {
+            width: 440px;
+            background: #18181b;
+            border-right: 1px solid #2f2f35;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+
+        .panel-header {
+            padding: 20px;
+            background: #1f1f23;
+            border-bottom: 1px solid #2f2f35;
+        }
+        .panel-header h2 { margin: 0; font-size: 1.2rem; color: #bf94ff; }
+        .panel-header p { margin: 5px 0 0; font-size: 0.85rem; color: #adadb8; }
+
+        .panel-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .control-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #adadb8;
+        }
+        .control-group input, .control-group select, .control-group textarea {
+            background: #0e0e10;
+            border: 1px solid #3a3a40;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+
+        .btn {
+            background: #772ce8;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-align: center;
+        }
+        .btn:hover { background: #9146ff; }
+        .btn-secondary { background: #3a3a40; }
+        .btn-secondary:hover { background: #4b4b52; }
+
+        /* Preview Stage */
+        #preview-stage {
+            flex: 1;
+            background: radial-gradient(circle, #2d2d38 0%, #111115 100%);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        
+        .preview-watermark {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: #adadb8;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Chat Output Engine */
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 8px;
+            width: 100%;
+            max-height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .chat-message {
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            padding: var(--padding-v) var(--padding-h);
+            border-radius: var(--border-radius);
+            word-break: break-word;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            backdrop-filter: blur(var(--blur-val));
+            -webkit-backdrop-filter: blur(var(--blur-val));
+            animation: var(--anim-style) 0.25s ease-out forwards;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            max-width: fit-content;
+        }
+
+        .chat-message.highlight-sub {
+            border-left: 4px solid #ff4500;
+            background: rgba(255, 69, 0, 0.25);
+        }
+
+        .chat-message.fade-out {
+            animation: fadeOut 0.4s ease-in forwards;
+        }
+
+        .badges {
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .badge {
+            width: 14px;
+            height: 14px;
+            object-fit: contain;
+            border-radius: 2px;
+        }
+
+        .username {
+            font-weight: 700;
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes popIn {
+            from { opacity: 0; transform: scale(0.85); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes bounce {
+            0% { opacity: 0; transform: translateY(20px); }
+            60% { opacity: 1; transform: translateY(-5px); }
+            100% { transform: translateY(0); }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateY(-10px); }
+        }
+
+        .code-box {
+            background: #0e0e10;
+            border: 1px solid #3a3a40;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+            color: #00ffcc;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI CONTROL PANEL -->
+    <div id="control-panel">
+        <div class="panel-header">
+            <h2>Twitch Chat Studio Pro</h2>
+            <p>Advanced OBS Browser Source Generator</p>
+        </div>
+        <div class="panel-body">
+            <div class="control-group">
+                <label>Twitch Channel Name</label>
+                <input type="text" id="cfg-channel" placeholder="e.g. shroud">
+            </div>
+
+            <div class="row">
+                <div class="control-group">
+                    <label>Layout Style</label>
+                    <select id="cfg-layout">
+                        <option value="bubble">Modern Bubble Card</option>
+                        <option value="minimal">Minimal Flat Text</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Animation Style</label>
+                    <select id="cfg-anim">
+                        <option value="slideIn">Slide In</option>
+                        <option value="popIn">Pop In / Zoom</option>
+                        <option value="bounce">Bounce</option>
+                        <option value="fadeIn">Fade In</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="control-group">
+                    <label>Font Family</label>
+                    <select id="cfg-font">
+                        <option value="'Inter', sans-serif">Inter</option>
+                        <option value="'Roboto', sans-serif">Roboto</option>
+                        <option value="'Poppins', sans-serif">Poppins</option>
+                        <option value="monospace">Monospace</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Font Size (px)</label>
+                    <input type="number" id="cfg-fontsize" value="16" min="10" max="32">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="control-group">
+                    <label>Glass Blur (px)</label>
                     <input type="number" id="cfg-blur" value="0" min="0" max="25" title="Frosted glass background blur">
                 </div>
                 <div class="control-group">
