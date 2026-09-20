@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Twitch Chat Studio & OBS Generator</title>
+    <title>Twitch Chat OBS Overlay</title>
+    <!-- Load tmi.js via secure CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tmi.js/1.8.5/tmi.min.js"></script>
     <style>
         :root {
@@ -15,11 +16,9 @@
             --padding-v: 8px;
             --padding-h: 12px;
             --fade-time: 0s;
-            --blur-val: 0px;
-            --anim-style: slideIn;
         }
 
-        /* OBS Transparent Mode */
+        /* OBS Transparent Background Mode */
         body.obs-mode, body.obs-mode html {
             margin: 0;
             padding: 0;
@@ -35,6 +34,320 @@
             color: #efeff1;
             font-family: 'Inter', sans-serif;
             display: flex;
+            height: 100vh;
+        }
+
+        /* Configuration Studio Panel */
+        #control-panel {
+            width: 400px;
+            background: #18181b;
+            border-right: 1px solid #2f2f35;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+
+        .panel-header {
+            padding: 20px;
+            background: #1f1f23;
+            border-bottom: 1px solid #2f2f35;
+        }
+        .panel-header h2 { margin: 0; font-size: 1.2rem; color: #bf94ff; }
+        .panel-header p { margin: 5px 0 0; font-size: 0.85rem; color: #adadb8; }
+
+        .panel-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .control-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #adadb8;
+        }
+        .control-group input, .control-group select {
+            background: #0e0e10;
+            border: 1px solid #3a3a40;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            background: #772ce8;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+        }
+        .btn:hover { background: #9146ff; }
+        .btn-secondary { background: #3a3a40; }
+
+        /* Chat Stage Output */
+        #preview-stage {
+            flex: 1;
+            background: radial-gradient(circle, #2d2d38 0%, #111115 100%);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 8px;
+            width: 100%;
+            max-height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .chat-message {
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            padding: var(--padding-v) var(--padding-h);
+            border-radius: var(--border-radius);
+            word-break: break-word;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            animation: slideIn 0.2s ease-out forwards;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            max-width: fit-content;
+        }
+
+        .chat-message.fade-out {
+            animation: fadeOut 0.4s ease-in forwards;
+        }
+
+        .badges {
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .badge {
+            width: 14px;
+            height: 14px;
+            object-fit: contain;
+            border-radius: 2px;
+        }
+
+        .username {
+            font-weight: 700;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateY(-10px); }
+        }
+
+        .code-box {
+            background: #0e0e10;
+            border: 1px solid #3a3a40;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+            color: #00ffcc;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- CONTROL PANEL (Hidden automatically in OBS via ?obs=true) -->
+    <div id="control-panel">
+        <div class="panel-header">
+            <h2>Twitch Chat Generator</h2>
+            <p>Zero-UI OBS Browser Source Creator</p>
+        </div>
+        <div class="panel-body">
+            <div class="control-group">
+                <label>Twitch Channel Name</label>
+                <input type="text" id="cfg-channel" placeholder="e.g. ninja">
+            </div>
+
+            <div class="control-group">
+                <label>Font Size (px)</label>
+                <input type="number" id="cfg-fontsize" value="16" min="10" max="32">
+            </div>
+
+            <div class="control-group">
+                <label>Test Controls</label>
+                <button class="btn btn-secondary" id="btn-test">Send Test Message</button>
+            </div>
+
+            <div class="control-group" style="margin-top: auto;">
+                <label>OBS Browser Source Link</label>
+                <div class="code-box" id="obs-url-output">Generate link...</div>
+                <button class="btn" id="btn-gen-url" style="margin-top: 6px;">Copy OBS Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHAT CONTAINER STAGE -->
+    <div id="preview-stage">
+        <div id="chat-container"></div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const channel = urlParams.get('channel');
+        const isObs = urlParams.has('obs') || urlParams.has('transparent');
+
+        const chatContainer = document.getElementById('chat-container');
+
+        // Apply custom styling params if provided
+        if (urlParams.has('size')) {
+            document.documentElement.style.setProperty('--font-size', urlParams.get('size') + 'px');
+        }
+
+        if (isObs) {
+            document.body.classList.add('obs-mode');
+            const panel = document.getElementById('control-panel');
+            if (panel) panel.style.display = 'none';
+            const stage = document.getElementById('preview-stage');
+            if (stage) {
+                stage.style.background = 'transparent';
+                stage.style.padding = '0';
+            }
+        }
+
+        function addChatMessage(username, message, color, badgesObj) {
+            color = color || '#9146FF';
+            badgesObj = badgesObj || {};
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message';
+
+            const badgesSpan = document.createElement('span');
+            badgesSpan.className = 'badges';
+            if (badgesObj.broadcaster) {
+                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f339dcf8309e/3" title="Broadcaster">';
+            } else if (badgesObj.moderator) {
+                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/3" title="Moderator">';
+            } else if (badgesObj.subscriber) {
+                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5d9c221a-75a7-4712-9c4d-62025175cf57/3" title="Subscriber">';
+            }
+            messageDiv.appendChild(badgesSpan);
+
+            const userSpan = document.createElement('span');
+            userSpan.className = 'username';
+            userSpan.style.color = color;
+            userSpan.textContent = username + ':';
+            messageDiv.appendChild(userSpan);
+
+            const textSpan = document.createElement('span');
+            textSpan.textContent = message;
+            messageDiv.appendChild(textSpan);
+
+            chatContainer.appendChild(messageDiv);
+
+            if (chatContainer.children.length > 30) {
+                chatContainer.removeChild(chatContainer.firstChild);
+            }
+        }
+
+        // Connect to Twitch IRC securely via tmi.js
+        if (channel) {
+            try {
+                const client = new tmi.Client({
+                    options: { debug: false },
+                    connection: {
+                        secure: true,
+                        reconnect: true
+                    },
+                    channels: [channel.toLowerCase()]
+                });
+
+                client.connect().then(() => {
+                    console.log("Connected to Twitch channel: " + channel);
+                }).catch(err => {
+                    console.error("Connection failed:", err);
+                });
+
+                client.on('message', (target, context, message, self) => {
+                    if (self) return;
+                    addChatMessage(
+                        context['display-name'] || context.username,
+                        message,
+                        context.color,
+                        context.badges || {}
+                    );
+                });
+            } catch (e) {
+                console.error("TMI initialization error:", e);
+            }
+        }
+
+        // Dashboard builder controls (Hidden inside OBS)
+        if (!isObs) {
+            const btnTest = document.getElementById('btn-test');
+            if (btnTest) {
+                btnTest.addEventListener('click', () => {
+                    addChatMessage('StreamTestBot', 'Hello! This is a simulated test message.', '#00ffcc', { broadcaster: true });
+                });
+            }
+
+            function updateLink() {
+                const chInput = document.getElementById('cfg-channel');
+                const sizeInput = document.getElementById('cfg-fontsize');
+                const ch = chInput && chInput.value.trim() ? chInput.value.trim() : 'your_channel';
+                const size = sizeInput ? sizeInput.value : '16';
+
+                const baseUrl = window.location.href.split('?')[0];
+                const finalUrl = baseUrl + '?channel=' + encodeURIComponent(ch) + '&obs=true&size=' + encodeURIComponent(size);
+                
+                const output = document.getElementById('obs-url-output');
+                if (output) output.textContent = finalUrl;
+            }
+
+            document.querySelectorAll('#control-panel input').forEach(input => {
+                input.addEventListener('input', updateLink);
+            });
+
+            const btnGen = document.getElementById('btn-gen-url');
+            if (btnGen) {
+                btnGen.addEventListener('click', () => {
+                    updateLink();
+                    const text = document.getElementById('obs-url-output').textContent;
+                    navigator.clipboard.writeText(text);
+                    alert('OBS Browser Link copied to clipboard!');
+                });
+            }
+
+            addChatMessage('System', 'Paste your channel name on the left and copy your OBS Link!', '#bf94ff', { broadcaster: true });
+            updateLink();
+        }
+    </script>
+</body>
+</html>            display: flex;
             height: 100vh;
         }
 
