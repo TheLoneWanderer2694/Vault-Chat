@@ -543,52 +543,61 @@
             if (window.twitchInterval) {
                 clearInterval(window.twitchInterval);
             }
+            if (ircSocket) {
+                try { ircSocket.close(); } catch(e) {}
+            }
 
             try {
-                // Try connecting via standard WebSocket with fallback to simulated live stream
                 ircSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
                 ircSocket.onopen = () => {
                     ircSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
                     ircSocket.send('NICK justinfan' + Math.floor(Math.random() * 80000));
                     ircSocket.send('JOIN #' + channel);
-                    statusEl.innerText = `Status: Connected to #${channel}!`;
+                    statusEl.innerText = `Status: Connected to #${channel}! Watching live messages...`;
                     statusEl.className = "text-[11px] text-emerald-400 mt-2";
                 };
 
                 ircSocket.onmessage = (event) => {
-                    const message = event.data;
-                    if (message.startsWith('PING')) {
-                        ircSocket.send('PONG ' + message.split(' ')[1]);
-                        return;
-                    }
-
-                    if (message.includes('PRIVMSG')) {
-                        try {
-                            const parts = message.split('PRIVMSG');
-                            const prefix = parts[0];
-                            const contentPart = parts[1];
-
-                            let username = "Viewer";
-                            const userMatch = prefix.match(/:([^!]+)!/);
-                            if (userMatch) username = userMatch[1];
-
-                            const textMatch = contentPart.match(/:(.+)$/);
-                            const chatText = textMatch ? textMatch[1] : '';
-
-                            let isMod = prefix.includes('mod=1');
-                            let isSub = prefix.includes('subscriber=1');
-
-                            addMessage(username, chatText, [], isMod, isSub);
-                        } catch (e) {
-                            console.error('Error parsing IRC message', e);
+                    const messages = event.data.split('\r\n');
+                    messages.forEach(message => {
+                        if (!message) return;
+                        if (message.startsWith('PING')) {
+                            ircSocket.send('PONG ' + message.split(' ')[1]);
+                            return;
                         }
-                    }
+
+                        if (message.includes('PRIVMSG')) {
+                            try {
+                                const parts = message.split('PRIVMSG');
+                                const prefix = parts[0];
+                                const contentPart = parts[1];
+
+                                let username = "Viewer";
+                                const userMatch = prefix.match(/:([^!]+)!/);
+                                if (userMatch) username = userMatch[1];
+
+                                const textMatch = contentPart.match(/:(.+)$/);
+                                const chatText = textMatch ? textMatch[1] : '';
+
+                                let isMod = prefix.includes('mod=1') || prefix.includes('badges=moderator');
+                                let isSub = prefix.includes('subscriber=1') || prefix.includes('badges=subscriber');
+
+                                addMessage(username, chatText, [], isMod, isSub);
+                            } catch (e) {
+                                console.error('Error parsing IRC message', e);
+                            }
+                        }
+                    });
                 };
 
                 ircSocket.onerror = (error) => {
-                    // Fallback gracefully to simulated stream if blocked by sandbox/CORS security
+                    console.warn('Twitch WS error or blocked by network. Enabling active live bridge simulator.', error);
                     activateLiveSimulator(channel, statusEl);
+                };
+
+                ircSocket.onclose = () => {
+                    console.log('Twitch WS closed.');
                 };
             } catch (err) {
                 activateLiveSimulator(channel, statusEl);
