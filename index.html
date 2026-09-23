@@ -241,7 +241,7 @@
         
         <div class="relative w-full pt-[56.25%] bg-black/90 rounded-lg overflow-hidden border border-slate-800 shadow-inner flex-1">
           <div id="embed-container" class="absolute inset-0 w-full h-full flex items-center justify-center">
-            <iframe id="overlay-iframe" src="" class="w-full h-full border-0 hidden" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+            <div id="overlay-iframe-wrapper" class="absolute inset-0 w-full h-full"></div>
             <div id="embed-placeholder" class="absolute inset-0 w-full h-full flex items-center justify-center text-slate-500 text-xs bg-slate-950">
               <div class="text-center p-4">
                 <i class="fa-brands fa-youtube text-2xl text-slate-600 mb-1 block"></i>
@@ -273,13 +273,24 @@
     let player = null;
     let isObserverMode = false;
     let mockChatInterval = null;
-    const bc = new BroadcastChannel('yt_lets_watch_channel_v16');
+    let activeVideoId = null;
+    let activePlaylistId = null;
+    const bc = new BroadcastChannel('yt_lets_watch_channel_v17');
 
     bc.onmessage = (event) => {
       if (event.data && event.data.type === 'STATE_UPDATE') {
-        state = event.data.state;
+        const incomingState = event.data.state;
+        const currentId = state.current ? (state.current.videoId || state.current.playlistId) : null;
+        const incomingId = incomingState.current ? (incomingState.current.videoId || incomingState.current.playlistId) : null;
+        
+        state = incomingState;
         autoPromoteQueue();
         renderAll();
+
+        // Only update player instance if target video/playlist actually changed
+        if (currentId !== incomingId) {
+          updatePlayerInstance();
+        }
       }
     };
 
@@ -307,7 +318,7 @@
     }
 
     function loadState() {
-      const saved = localStorage.getItem('yt_lets_watch_state_v16');
+      const saved = localStorage.getItem('yt_lets_watch_state_v17');
       if (saved) {
         try { state = JSON.parse(saved); } catch(e) {}
       }
@@ -316,7 +327,7 @@
 
     function saveState() {
       autoPromoteQueue();
-      localStorage.setItem('yt_lets_watch_state_v16', JSON.stringify(state));
+      localStorage.setItem('yt_lets_watch_state_v17', JSON.stringify(state));
       bc.postMessage({ type: 'STATE_UPDATE', state: state });
       renderAll();
     }
@@ -445,6 +456,7 @@
       }
 
       saveState();
+      updatePlayerInstance();
     }
 
     function playNext() {
@@ -454,6 +466,7 @@
         state.current = null;
       }
       saveState();
+      updatePlayerInstance();
     }
 
     function removeItem(index) {
@@ -465,6 +478,7 @@
       state.current = null;
       state.queue = [];
       saveState();
+      updatePlayerInstance();
     }
 
     function jumpToItem(index) {
@@ -474,6 +488,7 @@
       }
       state.current = target;
       saveState();
+      updatePlayerInstance();
     }
 
     function toggleChatBot() {
@@ -565,72 +580,68 @@
     tag.src = "https://www.youtube.com/iframe_api";
     document.getElementsByTagName('script')[0].parentNode.insertBefore(tag, document.getElementsByTagName('script')[0]);
 
-    let activeVideoId = null;
-    let activePlaylistId = null;
-
     window.onYouTubeIframeAPIReady = function() {
       updatePlayerInstance();
     };
 
     function updatePlayerInstance() {
-      const overlayIframe = document.getElementById('overlay-iframe');
+      const wrapper = document.getElementById('overlay-iframe-wrapper');
       const embedPlaceholder = document.getElementById('embed-placeholder');
       
       if (!state.current || (!state.current.videoId && !state.current.playlistId)) {
-        if (overlayIframe && embedPlaceholder) {
-          overlayIframe.src = "";
-          overlayIframe.classList.add('hidden');
+        if (wrapper && embedPlaceholder) {
+          wrapper.innerHTML = "";
           embedPlaceholder.classList.remove('hidden');
         }
         activeVideoId = null;
         activePlaylistId = null;
-        if (player) {
-          try { player.destroy(); } catch(e) {}
-          player = null;
-        }
+        player = null;
         return;
       }
 
-      if (overlayIframe && embedPlaceholder) {
-        overlayIframe.classList.remove('hidden');
+      if (embedPlaceholder) {
         embedPlaceholder.classList.add('hidden');
       }
 
-      if (state.current.playlistId) {
-        if (activePlaylistId === state.current.playlistId && player) return;
-        activePlaylistId = state.current.playlistId;
+      const newVideoId = state.current.videoId;
+      const newPlaylistId = state.current.playlistId;
+
+      if (newPlaylistId) {
+        if (activePlaylistId === newPlaylistId) return;
+        activePlaylistId = newPlaylistId;
         activeVideoId = null;
+        player = null;
 
-        if (player) {
-          try { player.destroy(); } catch(e) {}
-          player = null;
+        if (wrapper) {
+          wrapper.innerHTML = `<iframe id="overlay-iframe" src="https://www.youtube-nocookie.com/embed/videoseries?list=${newPlaylistId}&autoplay=1&enablejsapi=1" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
         }
-
-        overlayIframe.src = `https://www.youtube-nocookie.com/embed/videoseries?list=${activePlaylistId}&autoplay=1&enablejsapi=1`;
         return;
       }
 
-      if (activeVideoId === state.current.videoId && player) return;
+      if (newVideoId) {
+        if (activeVideoId === newVideoId && player) return;
+        activeVideoId = newVideoId;
+        activePlaylistId = null;
 
-      activeVideoId = state.current.videoId;
-      activePlaylistId = null;
-
-      if (window.YT && window.YT.Player) {
-        if (player) {
-          try {
-            player.loadVideoById(activeVideoId);
-            return;
-          } catch(e) { player = null; }
-        }
-
-        player = new YT.Player('overlay-iframe', {
-          videoId: activeVideoId,
-          playerVars: { 'autoplay': 1, 'controls': 1, 'enablejsapi': 1, 'rel': 0 },
-          events: { 'onStateChange': (e) => { if (e.data === 0) playNext(); } }
-        });
-      } else {
-        if (overlayIframe) {
-          overlayIframe.src = `https://www.youtube-nocookie.com/embed/${activeVideoId}?autoplay=1&enablejsapi=1`;
+        if (window.YT && window.YT.Player) {
+          if (!player) {
+            if (wrapper) wrapper.innerHTML = `<div id="overlay-iframe" class="w-full h-full"></div>`;
+            player = new YT.Player('overlay-iframe', {
+              videoId: newVideoId,
+              playerVars: { 'autoplay': 1, 'controls': 1, 'enablejsapi': 1, 'rel': 0 },
+              events: { 'onStateChange': (e) => { if (e.data === 0) playNext(); } }
+            });
+          } else {
+            try {
+              player.loadVideoById(newVideoId);
+            } catch(e) {
+              if (wrapper) wrapper.innerHTML = `<iframe id="overlay-iframe" src="https://www.youtube-nocookie.com/embed/${newVideoId}?autoplay=1&enablejsapi=1" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+            }
+          }
+        } else {
+          if (wrapper) {
+            wrapper.innerHTML = `<iframe id="overlay-iframe" src="https://www.youtube-nocookie.com/embed/${newVideoId}?autoplay=1&enablejsapi=1" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+          }
         }
       }
     }
@@ -711,7 +722,6 @@
           statusBadge.innerText = state.current.playlistId ? "Playlist Active" : "Auto-Queue Active";
           statusBadge.className = "text-[9px] bg-emerald-900/60 text-emerald-300 px-1.5 py-0.5 rounded font-mono";
         }
-        updatePlayerInstance();
       } else {
         if (titleEl) titleEl.innerText = "No video playing";
         if (creatorEl) creatorEl.innerText = "Waiting in queue";
@@ -719,7 +729,6 @@
           statusBadge.innerText = "Inactive";
           statusBadge.className = "text-[9px] bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-mono";
         }
-        updatePlayerInstance();
       }
 
       const overlayUpcoming = document.getElementById('overlay-upcoming-list');
@@ -750,10 +759,11 @@
       checkObsQueryParam();
       loadState();
       renderAll();
+      updatePlayerInstance();
     });
 
     window.addEventListener('storage', (e) => {
-      if (e.key === 'yt_lets_watch_state_v16') {
+      if (e.key === 'yt_lets_watch_state_v17') {
         loadState();
         renderAll();
       }
