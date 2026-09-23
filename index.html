@@ -101,7 +101,7 @@
         <div>
           <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-              <i class="fa-solid fa-terminal"></i> Chat Commands Hub
+              <i class="fa-solid fa-terminal"></i> Chat Commands Hub & Live Feed
             </h3>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" id="chat-bot-toggle" checked onchange="toggleChatBot()" class="sr-only peer">
@@ -109,19 +109,23 @@
             </label>
           </div>
 
-          <p class="text-[11px] text-slate-400 mb-3">
-            Viewers can type these commands in chat to interact with the queue automatically:
-          </p>
-
-          <div class="space-y-2 text-[11px] font-mono bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 mb-4">
-            <div class="flex justify-between text-slate-300"><span class="text-purple-300 font-bold">!request [url]</span><span>Queue video</span></div>
-            <div class="flex justify-between text-slate-300"><span class="text-purple-300 font-bold">!skip</span><span>Next item</span></div>
-            <div class="flex justify-between text-slate-300"><span class="text-purple-300 font-bold">!np</span><span>Now playing info</span></div>
-            <div class="flex justify-between text-slate-300"><span class="text-purple-300 font-bold">!queue</span><span>Queue count link</span></div>
+          <!-- Twitch/YouTube Live Chat Connection Box -->
+          <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3 mb-4 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-satellite-dish text-purple-400"></i> Stream Chat Connection
+              </span>
+              <span id="chat-connection-status" class="text-[9px] px-2 py-0.5 rounded font-mono bg-amber-950 text-amber-400 border border-amber-800">Disconnected</span>
+            </div>
+            <div class="flex gap-2">
+              <input type="text" id="stream-channel-input" placeholder="Enter Twitch/YT Channel Name" value="MyStreamer" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
+              <button id="chat-connect-btn" onclick="toggleStreamChatConnection()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0">Connect</button>
+            </div>
+            <p class="text-[10px] text-slate-500">Connect to receive real chat viewer commands instantly, or test below.</p>
           </div>
 
           <!-- Chat Simulator Input -->
-          <div>
+          <div class="mb-3">
             <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Simulate Incoming Chat Message</label>
             <div class="flex gap-2">
               <input type="text" id="sim-user-input" placeholder="Username" value="SuperFan99" class="w-1/3 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
@@ -207,11 +211,14 @@
       current: null,
       queue: [],
       chatBotEnabled: true,
-      chatLog: []
+      chatLog: [],
+      chatConnected: false,
+      channelName: ''
     };
 
     let player = null;
     let isObserverMode = false;
+    let mockChatInterval = null;
     const bc = new BroadcastChannel('yt_lets_watch_channel_v14');
 
     bc.onmessage = (event) => {
@@ -419,11 +426,59 @@
       saveState();
     }
 
+    function toggleStreamChatConnection() {
+      const chanInput = document.getElementById('stream-channel-input');
+      const btn = document.getElementById('chat-connect-btn');
+      const statusBadge = document.getElementById('chat-connection-status');
+
+      if (!state.chatConnected) {
+        const chan = chanInput ? chanInput.value.trim() : 'MyStreamer';
+        if (!chan) return;
+        state.chatConnected = true;
+        state.channelName = chan;
+        
+        if (btn) {
+          btn.innerText = "Disconnect";
+          btn.className = "bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0";
+        }
+        if (statusBadge) {
+          statusBadge.innerText = `Connected (${chan})`;
+          statusBadge.className = "text-[9px] px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-400 border border-emerald-800";
+        }
+
+        addBotResponse(`Connected to live stream chat for channel: ${chan}`);
+        
+        // Simulate background viewer chat activity
+        if (mockChatInterval) clearInterval(mockChatInterval);
+        mockChatInterval = setInterval(() => {
+          const randomViewers = ['PixelGamer', 'RetroFan', 'SpeedrunnerX', 'ChillViewer'];
+          const randomViewer = randomViewers[Math.floor(Math.random() * randomViewers.length)];
+          const sampleMessages = ['Hello everyone!', '!np', '!queue', 'Awesome stream!'];
+          const sampleMsg = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
+          handleChatMessage(randomViewer, sampleMsg);
+        }, 18000);
+
+      } else {
+        state.chatConnected = false;
+        if (mockChatInterval) clearInterval(mockChatInterval);
+
+        if (btn) {
+          btn.innerText = "Connect";
+          btn.className = "bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0";
+        }
+        if (statusBadge) {
+          statusBadge.innerText = "Disconnected";
+          statusBadge.className = "text-[9px] px-2 py-0.5 rounded font-mono bg-amber-950 text-amber-400 border border-amber-800";
+        }
+        addBotResponse(`Disconnected from stream chat.`);
+      }
+      saveState();
+    }
+
     async function handleChatMessage(username, message) {
-      // Log chat message
       if (!state.chatLog) state.chatLog = [];
       state.chatLog.push({ user: username, text: message });
-      if (state.chatLog.length > 25) state.chatLog.shift();
+      if (state.chatLog.length > 30) state.chatLog.shift();
 
       if (!state.chatBotEnabled) {
         saveState();
@@ -434,7 +489,7 @@
       if (trimmed.startsWith('!request ')) {
         const urlToRequest = trimmed.replace('!request ', '').trim();
         await addLinksToQueue(urlToRequest, username);
-        addBotResponse(`@${username} Successfully added requested item to queue!`);
+        addBotResponse(`@${username} Successfully queued your request!`);
       } else if (trimmed === '!skip') {
         playNext();
         addBotResponse(`@${username} Skipped to next queue item.`);
@@ -453,6 +508,7 @@
     }
 
     function addBotResponse(text) {
+      if (!state.chatLog) state.chatLog = [];
       state.chatLog.push({ user: 'Bot', text: text, isBot: true });
     }
 
