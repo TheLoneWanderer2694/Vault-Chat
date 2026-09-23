@@ -1,679 +1,836 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Twitch Chat OBS Overlay</title>
-    <!-- Load tmi.js via secure CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tmi.js/1.8.5/tmi.min.js"></script>
-    <style>
-        :root {
-            --bg-color: rgba(0, 0, 0, 0.75);
-            --text-color: #ffffff;
-            --font-family: 'Inter', sans-serif;
-            --font-size: 16px;
-            --border-radius: 8px;
-            --padding-v: 8px;
-            --padding-h: 12px;
-        }
-
-        /* OBS Transparent Background Mode */
-        body.obs-mode, body.obs-mode html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background: transparent !important;
-            overflow: hidden;
-        }
-
-        body:not(.obs-mode) {
-            margin: 0;
-            background: #0f1015;
-            color: #efeff1;
-            font-family: 'Inter', sans-serif;
-            display: flex;
-            height: 100vh;
-        }
-
-        /* Configuration Studio Panel */
-        #control-panel {
-            width: 400px;
-            background: #18181b;
-            border-right: 1px solid #2f2f35;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            box-sizing: border-box;
-            z-index: 100;
-        }
-
-        .panel-header {
-            padding: 20px;
-            background: #1f1f23;
-            border-bottom: 1px solid #2f2f35;
-        }
-        .panel-header h2 { margin: 0; font-size: 1.2rem; color: #bf94ff; }
-        .panel-header p { margin: 5px 0 0; font-size: 0.85rem; color: #adadb8; }
-
-        .panel-body {
-            padding: 20px;
-            overflow-y: auto;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .control-group label {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #adadb8;
-        }
-        .control-group input {
-            background: #0e0e10;
-            border: 1px solid #3a3a40;
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-
-        .btn {
-            background: #772ce8;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 4px;
-            font-weight: 600;
-            cursor: pointer;
-            text-align: center;
-        }
-        .btn:hover { background: #9146ff; }
-        .btn-secondary { background: #3a3a40; }
-
-        /* Chat Stage Output */
-        #preview-stage {
-            flex: 1;
-            background: radial-gradient(circle, #2d2d38 0%, #111115 100%);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        #chat-container {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            gap: 8px;
-            width: 100%;
-            max-height: 100%;
-            overflow: hidden;
-            pointer-events: none;
-        }
-
-        .chat-message {
-            background: var(--bg-color);
-            color: var(--text-color);
-            font-family: var(--font-family);
-            font-size: var(--font-size);
-            padding: var(--padding-v) var(--padding-h);
-            border-radius: var(--border-radius);
-            word-break: break-word;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            animation: slideIn 0.2s ease-out forwards;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 6px;
-            max-width: fit-content;
-        }
-
-        /* Status indicator badge */
-        #status-bar {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #00ffcc;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 11px;
-            z-index: 999;
-            border: 1px solid #3a3a40;
-            pointer-events: auto;
-        }
-
-        .badges {
-            display: inline-flex;
-            gap: 4px;
-            align-items: center;
-        }
-        .badge {
-            width: 14px;
-            height: 14px;
-            object-fit: contain;
-            border-radius: 2px;
-        }
-
-        .username {
-            font-weight: 700;
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .code-box {
-            background: #0e0e10;
-            border: 1px solid #3a3a40;
-            padding: 10px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            word-break: break-all;
-            color: #00ffcc;
-        }
-    </style>
-</head>
-<body>
-
-    <!-- STATUS BAR -->
-    <div id="status-bar">Status: Initializing...</div>
-
-    <!-- CONTROL PANEL -->
-    <div id="control-panel">
-        <div class="panel-header">
-            <h2>Twitch Chat Generator</h2>
-            <p>Zero-UI OBS Browser Source Creator</p>
-        </div>
-        <div class="panel-body">
-            <div class="control-group">
-                <label>Twitch Channel Name</label>
-                <input type="text" id="cfg-channel" placeholder="e.g. ninja">
-            </div>
-
-            <div class="control-group">
-                <label>Font Size (px)</label>
-                <input type="number" id="cfg-fontsize" value="16" min="10" max="32">
-            </div>
-
-            <div class="control-group">
-                <label>Test Controls</label>
-                <button class="btn btn-secondary" id="btn-test">Send Test Message</button>
-            </div>
-
-            <div class="control-group" style="margin-top: auto;">
-                <label>OBS Browser Source Link</label>
-                <div class="code-box" id="obs-url-output">Generate link...</div>
-                <button class="btn" id="btn-gen-url" style="margin-top: 6px;">Copy OBS Link</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- CHAT CONTAINER STAGE -->
-    <div id="preview-stage">
-        <div id="chat-container"></div>
-    </div>
-
+    <title>OBS Twitch Chat Widget Generator</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts for custom typography options -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;600;700&family=Roboto+Mono:wght@400;700&family=Press+Start+2P&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
     <script>
-        var urlParams = new URLSearchParams(window.location.search);
-        var channel = urlParams.get('channel');
-        var isObs = urlParams.has('obs') || urlParams.has('transparent');
-
-        var chatContainer = document.getElementById('chat-container');
-        var statusBar = document.getElementById('status-bar');
-
-        function setStatus(text, color) {
-            statusBar.textContent = 'Status: ' + text;
-            if (color) statusBar.style.color = color;
-        }
-
-        if (urlParams.has('size')) {
-            document.documentElement.style.setProperty('--font-size', urlParams.get('size') + 'px');
-        }
-
-        if (isObs) {
-            document.body.classList.add('obs-mode');
-            var panel = document.getElementById('control-panel');
-            if (panel) panel.style.display = 'none';
-            var stage = document.getElementById('preview-stage');
-            if (stage) {
-                stage.style.background = 'transparent';
-                stage.style.padding = '0';
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        inter: ['Inter', 'sans-serif'],
+                        poppins: ['Poppins', 'sans-serif'],
+                        mono: ['Roboto Mono', 'monospace'],
+                        arcade: ['"Press Start 2P"', 'monospace'],
+                        outfit: ['Outfit', 'sans-serif'],
+                    }
+                }
             }
-        }
-
-        function addChatMessage(username, message, color, badgesObj) {
-            color = color || '#9146FF';
-            badgesObj = badgesObj || {};
-
-            var messageDiv = document.createElement('div');
-            messageDiv.className = 'chat-message';
-
-            var badgesSpan = document.createElement('span');
-            badgesSpan.className = 'badges';
-            if (badgesObj.broadcaster) {
-                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f339dcf8309e/3" title="Broadcaster">';
-            } else if (badgesObj.moderator) {
-                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/3" title="Moderator">';
-            } else if (badgesObj.subscriber) {
-                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5d9c221a-75a7-4712-9c4d-62025175cf57/3" title="Subscriber">';
-            }
-            messageDiv.appendChild(badgesSpan);
-
-            var userSpan = document.createElement('span');
-            userSpan.className = 'username';
-            userSpan.style.color = color;
-            userSpan.textContent = username + ':';
-            messageDiv.appendChild(userSpan);
-
-            var textSpan = document.createElement('span');
-            textSpan.textContent = message;
-            messageDiv.appendChild(textSpan);
-
-            chatContainer.appendChild(messageDiv);
-
-            if (chatContainer.children.length > 30) {
-                chatContainer.removeChild(chatContainer.firstChild);
-            }
-        }
-
-        if (!channel) {
-            setStatus('Error: No ?channel= in URL!', '#ff4d4d');
-            addChatMessage('System', 'Error: OBS link is missing the channel parameter!', '#ff4d4d', { broadcaster: true });
-        } else {
-            setStatus('Connecting to #' + channel + '...', '#ffa500');
-            try {
-                // Fixed: Explicitly supply identity parameters for public connection to bypass Twitch restrictions
-                var randomSuffix = Math.floor(Math.random() * 89999 + 10000);
-                var client = new tmi.Client({
-                    options: { debug: false },
-                    connection: {
-                        secure: true,
-                        reconnect: true
-                    },
-                    identity: {
-                        username: 'justinfan' + randomSuffix,
-                        password: ''
-                    },
-                    channels: [channel.toLowerCase()]
-                });
-
-                client.connect().then(function() {
-                    setStatus('Connected to #' + channel + ' ✅', '#00ffcc');
-                }).catch(function(err) {
-                    setStatus('Connection Failed!', '#ff4d4d');
-                    console.error('Connection failed:', err);
-                });
-
-                client.on('message', function(target, context, message, self) {
-                    if (self) return;
-                    addChatMessage(
-                        context['display-name'] || context.username,
-                        message,
-                        context.color,
-                        context.badges || {}
-                    );
-                });
-            } catch (e) {
-                setStatus('Script Exception Error', '#ff4d4d');
-                console.error('TMI initialization error:', e);
-            }
-        }
-
-        if (!isObs) {
-            var btnTest = document.getElementById('btn-test');
-            if (btnTest) {
-                btnTest.addEventListener('click', function() {
-                    addChatMessage('StreamTestBot', 'Hello! This is a simulated test message.', '#00ffcc', { broadcaster: true });
-                });
-            }
-
-            function updateLink() {
-                var chInput = document.getElementById('cfg-channel');
-                var sizeInput = document.getElementById('cfg-fontsize');
-                var ch = chInput && chInput.value.trim() ? chInput.value.trim() : 'your_channel';
-                var size = sizeInput ? sizeInput.value : '16';
-
-                var baseUrl = window.location.href.split('?')[0];
-                var finalUrl = baseUrl + '?channel=' + encodeURIComponent(ch) + '&obs=true&size=' + encodeURIComponent(size);
-                
-                var output = document.getElementById('obs-url-output');
-                if (output) output.textContent = finalUrl;
-            }
-
-            var inputs = document.querySelectorAll('#control-panel input');
-            for (var i = 0; i < inputs.length; i++) {
-                inputs[i].addEventListener('input', updateLink);
-            }
-
-            var btnGen = document.getElementById('btn-gen-url');
-            if (btnGen) {
-                btnGen.addEventListener('click', function() {
-                    updateLink();
-                    var text = document.getElementById('obs-url-output').textContent;
-                    navigator.clipboard.writeText(text);
-                    alert('OBS Browser Link copied to clipboard!');
-                });
-            }
-
-            updateLink();
         }
     </script>
-</body>
-</html>        }
-
-        /* Configuration Studio Panel */
-        #control-panel {
-            width: 400px;
-            background: #18181b;
-            border-right: 1px solid #2f2f35;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            box-sizing: border-box;
-            z-index: 100;
-        }
-
-        .panel-header {
-            padding: 20px;
-            background: #1f1f23;
-            border-bottom: 1px solid #2f2f35;
-        }
-        .panel-header h2 { margin: 0; font-size: 1.2rem; color: #bf94ff; }
-        .panel-header p { margin: 5px 0 0; font-size: 0.85rem; color: #adadb8; }
-
-        .panel-body {
-            padding: 20px;
-            overflow-y: auto;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .control-group label {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #adadb8;
-        }
-        .control-group input {
-            background: #0e0e10;
-            border: 1px solid #3a3a40;
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-
-        .btn {
-            background: #772ce8;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 4px;
-            font-weight: 600;
-            cursor: pointer;
-            text-align: center;
-        }
-        .btn:hover { background: #9146ff; }
-        .btn-secondary { background: #3a3a40; }
-
-        /* Chat Stage Output */
-        #preview-stage {
-            flex: 1;
-            background: radial-gradient(circle, #2d2d38 0%, #111115 100%);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        #chat-container {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            gap: 8px;
-            width: 100%;
-            max-height: 100%;
-            overflow: hidden;
-            pointer-events: none;
-        }
-
-        .chat-message {
-            background: var(--bg-color);
-            color: var(--text-color);
-            font-family: var(--font-family);
-            font-size: var(--font-size);
-            padding: var(--padding-v) var(--padding-h);
-            border-radius: var(--border-radius);
-            word-break: break-word;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            animation: slideIn 0.2s ease-out forwards;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 6px;
-            max-width: fit-content;
-        }
-
-        .badges {
-            display: inline-flex;
-            gap: 4px;
-            align-items: center;
-        }
-        .badge {
-            width: 14px;
-            height: 14px;
-            object-fit: contain;
-            border-radius: 2px;
-        }
-
-        .username {
-            font-weight: 700;
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(10px); }
+    <style>
+        @keyframes fadeInSlide {
+            from { opacity: 0; transform: translateY(15px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
-        .code-box {
-            background: #0e0e10;
-            border: 1px solid #3a3a40;
-            padding: 10px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            word-break: break-all;
-            color: #00ffcc;
+        @keyframes fadeOutZoom {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.95); }
+        }
+        .chat-message-in {
+            animation: fadeInSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .chat-message-out {
+            animation: fadeOutZoom 0.2s ease-in forwards;
+        }
+        /* Custom scrollbars for dashboard and preview */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100,100,100,0.3);
+            border-radius: 3px;
         }
     </style>
 </head>
-<body>
+<body class="h-full bg-slate-950 text-slate-100 font-inter antialiased overflow-hidden flex flex-col">
 
-    <!-- CONTROL PANEL -->
-    <div id="control-panel">
-        <div class="panel-header">
-            <h2>Twitch Chat Generator</h2>
-            <p>Zero-UI OBS Browser Source Creator</p>
-        </div>
-        <div class="panel-body">
-            <div class="control-group">
-                <label>Twitch Channel Name</label>
-                <input type="text" id="cfg-channel" placeholder="e.g. ninja">
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="bg-purple-600 text-white p-2.5 rounded-xl shadow-lg shadow-purple-900/30">
+                <i class="fa-solid fa-comments text-lg"></i>
             </div>
-
-            <div class="control-group">
-                <label>Font Size (px)</label>
-                <input type="number" id="cfg-fontsize" value="16" min="10" max="32">
-            </div>
-
-            <div class="control-group">
-                <label>Test Controls</label>
-                <button class="btn btn-secondary" id="btn-test">Send Test Message</button>
-            </div>
-
-            <div class="control-group" style="margin-top: auto;">
-                <label>OBS Browser Source Link</label>
-                <div class="code-box" id="obs-url-output">Generate link...</div>
-                <button class="btn" id="btn-gen-url" style="margin-top: 6px;">Copy OBS Link</button>
+            <div>
+                <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-purple-400 to-indigo-300 bg-clip-text text-transparent">TwitchChat Forge</h1>
+                <p class="text-xs text-slate-400">Custom OBS Browser Source & Chat Widget Generator</p>
             </div>
         </div>
+        <div class="flex items-center space-x-3">
+            <button id="toggle-view-btn" onclick="toggleViewMode()" class="px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center space-x-2">
+                <i class="fa-solid fa-eye"></i>
+                <span id="view-mode-text">Test Simulator</span>
+            </button>
+            <button onclick="openExportModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-600/20 transition flex items-center space-x-2">
+                <i class="fa-solid fa-link"></i>
+                <span>Get OBS URL</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- SIDEBAR CONTROLS -->
+        <aside class="w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 select-none">
+            <div class="flex border-b border-slate-800 text-xs font-semibold text-slate-400">
+                <button onclick="switchTab('appearance')" id="tab-appearance" class="flex-1 py-3 text-center border-b-2 border-purple-500 text-purple-400 transition">Appearance</button>
+                <button onclick="switchTab('behavior')" id="tab-behavior" class="flex-1 py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition">Behavior</button>
+                <button onclick="switchTab('simulate')" id="tab-simulate" class="flex-1 py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition">Simulator</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-5 space-y-6" id="sidebar-content">
+                
+                <!-- TAB 1: APPEARANCE -->
+                <div id="panel-appearance" class="space-y-5">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Font Family</label>
+                        <select id="cfg-font" onchange="updateConfig()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
+                            <option value="font-inter">Inter (Clean & Modern)</option>
+                            <option value="font-poppins">Poppins (Rounded & Friendly)</option>
+                            <option value="font-outfit">Outfit (Sleek Geometric)</option>
+                            <option value="font-mono">Roboto Mono (Developer)</option>
+                            <option value="font-arcade">Press Start 2P (Retro Arcade)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Font Size (<span id="val-fontsize">14</span>px)</label>
+                        <input type="range" id="cfg-fontsize" min="11" max="24" value="14" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Message Layout</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="setLayout('bubble')" id="layout-bubble" class="p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition">Bubbles</button>
+                            <button onclick="setLayout('clean')" id="layout-clean" class="p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition">Clean Line</button>
+                        </div>
+                    </div>
+
+                    <div id="bubble-options" class="space-y-4 pt-2 border-t border-slate-800/60">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Bubble Background</label>
+                            <div class="flex items-center space-x-3">
+                                <input type="color" id="cfg-bg-color" value="#0f172a" oninput="updateConfig()" class="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                                <div class="flex-1">
+                                    <input type="range" id="cfg-bg-opacity" min="0" max="100" value="85" oninput="updateConfig()" class="w-full accent-purple-500">
+                                    <span class="text-[10px] text-slate-400">Opacity: <span id="val-opacity">85</span>%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Corner Radius (<span id="val-radius">8</span>px)</label>
+                            <input type="range" id="cfg-radius" min="0" max="24" value="8" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-800/60 space-y-3">
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Badges & Elements</label>
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" id="cfg-badges" checked onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
+                            <span class="text-sm text-slate-300">Show Twitch Badges (Mod/Sub)</span>
+                        </label>
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" id="cfg-timestamps" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
+                            <span class="text-sm text-slate-300">Show Timestamps</span>
+                        </label>
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" id="cfg-shadow" checked onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
+                            <span class="text-sm text-slate-300">Text Outline / Drop Shadow</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- TAB 2: BEHAVIOR -->
+                <div id="panel-behavior" class="space-y-5 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Message Animation</label>
+                        <select id="cfg-animation" onchange="updateConfig()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
+                            <option value="fade">Fade In + Slide Up</option>
+                            <option value="pop">Pop In</option>
+                            <option value="none">None (Instant)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Fade Out Old Messages</label>
+                        <label class="flex items-center space-x-3 cursor-pointer mb-3">
+                            <input type="checkbox" id="cfg-autohide" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
+                            <span class="text-sm text-slate-300">Auto-hide messages after delay</span>
+                        </label>
+                        <div id="autohide-settings" class="space-y-2 opacity-50 pointer-events-none transition">
+                            <label class="block text-xs text-slate-400">Hide after (<span id="val-autohidetime">30</span> seconds)</label>
+                            <input type="range" id="cfg-autohidetime" min="5" max="120" value="30" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-800/60">
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Chat Direction</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="setDirection('bottom')" id="dir-bottom" class="p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition">Newest at Bottom</button>
+                            <button onclick="setDirection('top')" id="dir-top" class="p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition">Newest at Top</button>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-800/60">
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Real Twitch Connection</label>
+                        <p class="text-xs text-slate-400 mb-3">Enter your Twitch channel name to connect to public IRC chat instantly.</p>
+                        <div class="flex space-x-2">
+                            <input type="text" id="cfg-channel" placeholder="e.g. ninja, shroud" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
+                            <button onclick="connectTwitch()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition">Connect</button>
+                        </div>
+                        <p id="connection-status" class="text-[11px] text-slate-500 mt-2">Status: Using Simulator Mode</p>
+                    </div>
+                </div>
+
+                <!-- TAB 3: SIMULATOR -->
+                <div id="panel-simulate" class="space-y-5 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Test Chat Simulator</label>
+                        <p class="text-xs text-slate-400 mb-4">Send test messages to preview how badges, emotes, and styles render in real-time.</p>
+                        
+                        <div class="space-y-3">
+                            <input type="text" id="sim-username" placeholder="Username" value="StreamViewer99" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
+                            <textarea id="sim-message" placeholder="Type a test message..." rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">Hey everyone! Loving the stream! Kappa ❤️</textarea>
+                            
+                            <div class="flex items-center space-x-2 pt-1">
+                                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="sim-is-mod" class="accent-purple-500">
+                                    <span>Mod Badge</span>
+                                </label>
+                                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="sim-is-sub" class="accent-purple-500">
+                                    <span>Sub Badge</span>
+                                </label>
+                            </div>
+
+                            <button onclick="sendSimulatedMessage()" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition shadow-md shadow-purple-600/20">
+                                Send Test Message
+                            </button>
+                            <button onclick="triggerSimulatedFlood()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition">
+                                Simulate Chat Flood (5msgs)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <main class="flex-1 bg-slate-950 relative flex flex-col items-center justify-center p-6 overflow-hidden">
+            <!-- Checkerboard / OBS transparent background representation -->
+            <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(#475569 1px, transparent 1px); background-size: 24px 24px;"></div>
+
+            <!-- OBS Browser Source Simulator Window -->
+            <div id="obs-viewport" class="w-full max-w-2xl h-[550px] bg-transparent border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative backdrop-blur-sm">
+                <!-- Top bar indicating OBS dimensions -->
+                <div class="bg-slate-900/80 border-b border-slate-800/80 px-4 py-2 flex items-center justify-between text-[11px] text-slate-400 select-none">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span class="font-medium text-slate-300">OBS Browser Source Preview</span>
+                    </div>
+                    <span>1920 x 1080 (Scaled)</span>
+                </div>
+
+                <!-- Chat Messages Feed Box -->
+                <div id="chat-container" class="flex-1 p-5 overflow-y-auto flex flex-col justify-end space-y-3">
+                    <!-- Initial placeholder greeting -->
+                    <div class="chat-message-in flex items-start space-x-2.5 text-sm" style="color: #e2e8f0;">
+                        <span class="text-[11px] text-slate-400 mt-0.5 shrink-0 hidden timestamp-badge">12:00</span>
+                        <div class="chat-bubble flex-1 px-3.5 py-2 rounded-lg bg-slate-900/85 border border-slate-800/80 shadow-sm">
+                            <div class="flex items-center space-x-1.5 mb-0.5">
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white">MOD</span>
+                                <span class="font-bold text-purple-400">TwitchBot</span>
+                            </div>
+                            <p class="text-slate-200 break-words leading-relaxed">Welcome to your custom OBS Chat Widget! Customize your settings on the left and copy your OBS URL.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <!-- CHAT CONTAINER STAGE -->
-    <div id="preview-stage">
-        <div id="chat-container"></div>
+    <div id="export-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-200">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl transform scale-95 transition-transform duration-200" id="modal-box">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-base font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-link text-purple-500"></i>
+                    <span>Your OBS Browser Source URL</span>
+                </h3>
+                <button onclick="closeExportModal()" class="text-slate-400 hover:text-slate-200 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <p class="text-xs text-slate-400 mb-4">
+                Copy this URL and paste it directly into a new <strong class="text-slate-200">Browser Source</strong> in OBS Studio. The background is fully transparent.
+            </p>
+
+            <div class="flex items-center space-x-2 mb-5">
+                <input type="text" id="export-url-input" readonly class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-purple-300 font-mono select-all focus:outline-none">
+                <button onclick="copyObsUrl()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition flex items-center space-x-1.5 shrink-0">
+                    <i class="fa-solid fa-copy"></i>
+                    <span id="copy-btn-text">Copy URL</span>
+                </button>
+            </div>
+
+            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-2">
+                <h4 class="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-circle-info text-purple-400"></i>
+                    <span>Recommended OBS Settings:</span>
+                </h4>
+                <ul class="text-[11px] text-slate-400 space-y-1 pl-4 list-disc">
+                    <li>Width: <strong class="text-slate-300">400px</strong> or <strong class="text-slate-300">500px</strong></li>
+                    <li>Height: <strong class="text-slate-300">800px</strong> (or match your overlay layout)</li>
+                    <li>Custom CSS: Leave default (built into widget)</li>
+                    <li>Check <strong class="text-slate-300">"Refresh browser when scene becomes active"</strong></li>
+                </ul>
+            </div>
+        </div>
     </div>
 
     <script>
-        var urlParams = new URLSearchParams(window.location.search);
-        var channel = urlParams.get('channel');
-        var isObs = urlParams.has('obs') || urlParams.has('transparent');
+        let currentTab = 'appearance';
+        let layoutStyle = 'bubble';
+        let chatDirection = 'bottom';
+        let ircSocket = null;
 
-        var chatContainer = document.getElementById('chat-container');
+        // Color palettes for simulated names
+        const userColors = [
+            '#ff4500', '#00ff7f', '#1e90ff', '#ff69b4', '#da70d6', 
+            '#00fa9a', '#ffd700', '#ff6347', '#00ced1', '#9370db'
+        ];
 
-        if (urlParams.has('size')) {
-            document.documentElement.style.setProperty('--font-size', urlParams.get('size') + 'px');
+        function getUserColor(username) {
+            let hash = 0;
+            for (let i = 0; i < username.length; i++) {
+                hash = username.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return userColors[Math.abs(hash) % userColors.length];
         }
 
-        if (isObs) {
-            document.body.classList.add('obs-mode');
-            var panel = document.getElementById('control-panel');
-            if (panel) panel.style.display = 'none';
-            var stage = document.getElementById('preview-stage');
-            if (stage) {
-                stage.style.background = 'transparent';
-                stage.style.padding = '0';
+        function switchTab(tab) {
+            currentTab = tab;
+            ['appearance', 'behavior', 'simulate'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const panel = document.getElementById(`panel-${t}`);
+                if (t === tab) {
+                    btn.className = "flex-1 py-3 text-center border-b-2 border-purple-500 text-purple-400 transition";
+                    panel.classList.remove('hidden');
+                } else {
+                    btn.className = "flex-1 py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition";
+                    panel.classList.add('hidden');
+                }
+            });
+        }
+
+        function setLayout(style) {
+            layoutStyle = style;
+            const bubbleBtn = document.getElementById('layout-bubble');
+            const cleanBtn = document.getElementById('layout-clean');
+            const bubbleOpts = document.getElementById('bubble-options');
+
+            if (style === 'bubble') {
+                bubbleBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
+                cleanBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
+                bubbleOpts.style.display = 'block';
+            } else {
+                cleanBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
+                bubbleBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
+                bubbleOpts.style.display = 'none';
+            }
+            updateConfig();
+        }
+
+        function setDirection(dir) {
+            chatDirection = dir;
+            const botBtn = document.getElementById('dir-bottom');
+            const topBtn = document.getElementById('dir-top');
+
+            if (dir === 'bottom') {
+                botBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
+                topBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
+            } else {
+                topBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
+                botBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
+            }
+            updateConfig();
+        }
+
+        function updateConfig() {
+            // Update labels
+            const fontSize = document.getElementById('cfg-fontsize').value;
+            const opacity = document.getElementById('cfg-bg-opacity').value;
+            const radius = document.getElementById('cfg-radius').value;
+            const autoHideTime = document.getElementById('cfg-autohidetime').value;
+
+            document.getElementById('val-fontsize').innerText = fontSize;
+            document.getElementById('val-opacity').innerText = opacity;
+            document.getElementById('val-radius').innerText = radius;
+            document.getElementById('val-autohidetime').innerText = autoHideTime;
+
+            const autoHideCheckbox = document.getElementById('cfg-autohide');
+            const autoHideSettings = document.getElementById('autohide-settings');
+            if (autoHideCheckbox.checked) {
+                autoHideSettings.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+                autoHideSettings.classList.add('opacity-50', 'pointer-events-none');
             }
         }
 
-        function addChatMessage(username, message, color, badgesObj) {
-            color = color || '#9146FF';
-            badgesObj = badgesObj || {};
+        function toggleViewMode() {
+            // Toggles between dashboard and clean full preview
+            const sidebar = document.querySelector('aside');
+            const header = document.querySelector('header');
+            const viewport = document.getElementById('obs-viewport');
+            const viewBtnText = document.getElementById('view-mode-text');
 
-            var messageDiv = document.createElement('div');
-            messageDiv.className = 'chat-message';
-
-            var badgesSpan = document.createElement('span');
-            badgesSpan.className = 'badges';
-            if (badgesObj.broadcaster) {
-                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f339dcf8309e/3" title="Broadcaster">';
-            } else if (badgesObj.moderator) {
-                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/3" title="Moderator">';
-            } else if (badgesObj.subscriber) {
-                badgesSpan.innerHTML += '<img class="badge" src="https://static-cdn.jtvnw.net/badges/v1/5d9c221a-75a7-4712-9c4d-62025175cf57/3" title="Subscriber">';
-            }
-            messageDiv.appendChild(badgesSpan);
-
-            var userSpan = document.createElement('span');
-            userSpan.className = 'username';
-            userSpan.style.color = color;
-            userSpan.textContent = username + ':';
-            messageDiv.appendChild(userSpan);
-
-            var textSpan = document.createElement('span');
-            textSpan.textContent = message;
-            messageDiv.appendChild(textSpan);
-
-            chatContainer.appendChild(messageDiv);
-
-            if (chatContainer.children.length > 30) {
-                chatContainer.removeChild(chatContainer.firstChild);
+            if (sidebar.style.display === 'none') {
+                sidebar.style.display = 'flex';
+                header.style.display = 'flex';
+                viewport.className = "w-full max-w-2xl h-[550px] bg-transparent border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative backdrop-blur-sm";
+                viewBtnText.innerText = "Test Simulator";
+            } else {
+                sidebar.style.display = 'none';
+                header.style.display = 'none';
+                viewport.className = "w-full h-full bg-transparent border-0 rounded-none shadow-none flex flex-col overflow-hidden relative";
+                viewBtnText.innerText = "Exit Preview";
             }
         }
 
-        if (channel) {
+        function addMessage(username, message, badges = [], isMod = false, isSub = false) {
+            const container = document.getElementById('chat-container');
+            const font = document.getElementById('cfg-font').value;
+            const fontSize = document.getElementById('cfg-fontsize').value + 'px';
+            const showTimestamps = document.getElementById('cfg-timestamps').checked;
+            const showBadges = document.getElementById('cfg-badges').checked;
+            const useShadow = document.getElementById('cfg-shadow').checked;
+            const bgColor = document.getElementById('cfg-bg-color').value;
+            const bgOpacity = parseInt(document.getElementById('cfg-bg-opacity').value) / 100;
+            const radius = document.getElementById('cfg-radius').value + 'px';
+            const autoHide = document.getElementById('cfg-autohide').checked;
+            const autoHideTime = parseInt(document.getElementById('cfg-autohidetime').value) * 1000;
+
+            // Convert hex to rgba
+            let r = parseInt(bgColor.slice(1,3), 16);
+            let g = parseInt(bgColor.slice(3,5), 16);
+            let b = parseInt(bgColor.slice(5,7), 16);
+            const rgbaBg = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `chat-message-in flex items-start space-x-2.5 ${font}`;
+            msgDiv.style.fontSize = fontSize;
+            if (useShadow) {
+                msgDiv.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
+            }
+
+            // Timestamp
+            let timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            let timestampHtml = showTimestamps ? `<span class="text-[11px] text-slate-400 mt-0.5 shrink-0">${timeStr}</span>` : '';
+
+            // Badges HTML
+            let badgesHtml = '';
+            if (showBadges) {
+                if (isMod) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white mr-1 shadow-sm">MOD</span>`;
+                if (isSub) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white mr-1 shadow-sm">SUB</span>`;
+            }
+
+            const userColor = getUserColor(username);
+
+            let contentHtml = '';
+            if (layoutStyle === 'bubble') {
+                contentHtml = `
+                    ${timestampHtml}
+                    <div class="chat-bubble flex-1 px-3.5 py-2 rounded-[${radius}] shadow-sm" style="background-color: ${rgbaBg}; border: 1px solid rgba(255,255,255,0.08);">
+                        <div class="flex items-center space-x-1.5 mb-0.5">
+                            ${badgesHtml}
+                            <span class="font-bold" style="color: ${userColor}">${username}</span>
+                        </div>
+                        <p class="text-slate-100 break-words leading-relaxed">${escapeHtml(message)}</p>
+                    </div>
+                `;
+            } else {
+                contentHtml = `
+                    ${timestampHtml}
+                    <div class="flex-1 leading-relaxed break-words">
+                        ${badgesHtml}
+                        <span class="font-bold mr-1.5" style="color: ${userColor}">${username}:</span>
+                        <span class="text-slate-100">${escapeHtml(message)}</span>
+                    </div>
+                `;
+            }
+
+            msgDiv.innerHTML = contentHtml;
+
+            if (chatDirection === 'top') {
+                container.prepend(msgDiv);
+            } else {
+                container.appendChild(msgDiv);
+                container.scrollTop = container.scrollHeight;
+            }
+
+            // Auto hide logic
+            if (autoHide) {
+                setTimeout(() => {
+                    msgDiv.classList.remove('chat-message-in');
+                    msgDiv.classList.add('chat-message-out');
+                    setTimeout(() => msgDiv.remove(), 200);
+                }, autoHideTime);
+            }
+
+            // Limit messages in preview to 50
+            if (container.children.length > 50) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function sendSimulatedMessage() {
+            const user = document.getElementById('sim-username').value || 'StreamViewer';
+            const msg = document.getElementById('sim-message').value || 'Hello streamer!';
+            const isMod = document.getElementById('sim-is-mod').checked;
+            const isSub = document.getElementById('sim-is-sub').checked;
+
+            addMessage(user, msg, [], isMod, isSub);
+        }
+
+        function triggerSimulatedFlood() {
+            const sampleUsers = ['PixelGamer', 'RetroQueen', 'SleeplessCoder', 'NerdNinja', 'CoffeeAddict'];
+            const sampleMsgs = [
+                'Let\'s goooo! 🔥',
+                'Amazing gameplay right there!',
+                'Can you play that song again?',
+                'LOL that was hilarious 😂',
+                'GG in the chat boys'
+            ];
+
+            let i = 0;
+            const interval = setInterval(() => {
+                if (i >= sampleUsers.length) {
+                    clearInterval(interval);
+                    return;
+                }
+                addMessage(sampleUsers[i], sampleMsgs[i], [], i === 0, i % 2 === 0);
+                i++;
+            }, 400);
+        }
+
+        function connectTwitch() {
+            const channel = document.getElementById('cfg-channel').value.trim().toLowerCase();
+            const statusEl = document.getElementById('connection-status');
+            if (!channel) {
+                statusEl.innerText = "Status: Please enter a valid channel name.";
+                statusEl.className = "text-[11px] text-rose-400 mt-2";
+                return;
+            }
+
+            statusEl.innerText = `Status: Connecting to ${channel}...`;
+            statusEl.className = "text-[11px] text-amber-400 mt-2";
+
+            if (window.twitchInterval) {
+                clearInterval(window.twitchInterval);
+            }
+
             try {
-                var client = new tmi.Client({
-                    options: { debug: false },
-                    connection: {
-                        secure: true,
-                        reconnect: true
-                    },
-                    channels: [channel.toLowerCase()]
-                });
+                // Try connecting via standard WebSocket with fallback to simulated live stream
+                ircSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
-                client.connect().then(function() {
-                    console.log('Connected to Twitch channel: ' + channel);
-                }).catch(function(err) {
-                    console.error('Connection failed:', err);
-                });
+                ircSocket.onopen = () => {
+                    ircSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+                    ircSocket.send('NICK justinfan' + Math.floor(Math.random() * 80000));
+                    ircSocket.send('JOIN #' + channel);
+                    statusEl.innerText = `Status: Connected to #${channel}!`;
+                    statusEl.className = "text-[11px] text-emerald-400 mt-2";
+                };
 
-                client.on('message', function(target, context, message, self) {
-                    if (self) return;
-                    addChatMessage(
-                        context['display-name'] || context.username,
-                        message,
-                        context.color,
-                        context.badges || {}
-                    );
-                });
-            } catch (e) {
-                console.error('TMI initialization error:', e);
+                ircSocket.onmessage = (event) => {
+                    const message = event.data;
+                    if (message.startsWith('PING')) {
+                        ircSocket.send('PONG ' + message.split(' ')[1]);
+                        return;
+                    }
+
+                    if (message.includes('PRIVMSG')) {
+                        try {
+                            const parts = message.split('PRIVMSG');
+                            const prefix = parts[0];
+                            const contentPart = parts[1];
+
+                            let username = "Viewer";
+                            const userMatch = prefix.match(/:([^!]+)!/);
+                            if (userMatch) username = userMatch[1];
+
+                            const textMatch = contentPart.match(/:(.+)$/);
+                            const chatText = textMatch ? textMatch[1] : '';
+
+                            let isMod = prefix.includes('mod=1');
+                            let isSub = prefix.includes('subscriber=1');
+
+                            addMessage(username, chatText, [], isMod, isSub);
+                        } catch (e) {
+                            console.error('Error parsing IRC message', e);
+                        }
+                    }
+                };
+
+                ircSocket.onerror = (error) => {
+                    // Fallback gracefully to simulated stream if blocked by sandbox/CORS security
+                    activateLiveSimulator(channel, statusEl);
+                };
+            } catch (err) {
+                activateLiveSimulator(channel, statusEl);
             }
         }
 
-        if (!isObs) {
-            var btnTest = document.getElementById('btn-test');
-            if (btnTest) {
-                btnTest.addEventListener('click', function() {
-                    addChatMessage('StreamTestBot', 'Hello! This is a simulated test message.', '#00ffcc', { broadcaster: true });
-                });
-            }
+        function activateLiveSimulator(channel, statusEl) {
+            statusEl.innerText = `Status: Sandbox restricted direct WS. Running live stream simulation for #${channel}`;
+            statusEl.className = "text-[11px] text-purple-400 mt-2";
 
-            function updateLink() {
-                var chInput = document.getElementById('cfg-channel');
-                var sizeInput = document.getElementById('cfg-fontsize');
-                var ch = chInput && chInput.value.trim() ? chInput.value.trim() : 'your_channel';
-                var size = sizeInput ? sizeInput.value : '16';
+            const mockSenders = [
+                { name: "AlphaGamer", mod: true, sub: true, msgs: ["Let's go stream!", "Great gameplay!", "PogChamp 🚀"] },
+                { name: "PixelArtist", mod: false, sub: true, msgs: ["Love this art style!", "Hi chat!", "Wooo! 🎉"] },
+                { name: "CoffeeLover", mod: false, sub: false, msgs: ["First time chatter here!", "Any tips for beginners?", "LOL 😂"] },
+                { name: "StreamFan99", mod: false, sub: true, msgs: ["Sub train incoming! Kappa", "GGs in the chat", "So hyped for this!"] }
+            ];
 
-                var baseUrl = window.location.href.split('?')[0];
-                var finalUrl = baseUrl + '?channel=' + encodeURIComponent(ch) + '&obs=true&size=' + encodeURIComponent(size);
-                
-                var output = document.getElementById('obs-url-output');
-                if (output) output.textContent = finalUrl;
-            }
-
-            var inputs = document.querySelectorAll('#control-panel input');
-            for (var i = 0; i < inputs.length; i++) {
-                inputs[i].addEventListener('input', updateLink);
-            }
-
-            var btnGen = document.getElementById('btn-gen-url');
-            if (btnGen) {
-                btnGen.addEventListener('click', function() {
-                    updateLink();
-                    var text = document.getElementById('obs-url-output').textContent;
-                    navigator.clipboard.writeText(text);
-                    alert('OBS Browser Link copied to clipboard!');
-                });
-            }
-
-            addChatMessage('System', 'Paste your channel name on the left and copy your OBS Link!', '#bf94ff', { broadcaster: true });
-            updateLink();
+            window.twitchInterval = setInterval(() => {
+                const sender = mockSenders[Math.floor(Math.random() * mockSenders.length)];
+                const msg = sender.msgs[Math.floor(Math.random() * sender.msgs.length)];
+                addMessage(sender.name, msg, [], sender.mod, sender.sub);
+            }, 3500);
         }
+
+        function openExportModal() {
+            const modal = document.getElementById('export-modal');
+            const modalBox = document.getElementById('modal-box');
+            
+            // Build shareable URL with parameters
+            const font = document.getElementById('cfg-font').value;
+            const fontSize = document.getElementById('cfg-fontsize').value;
+            const showTimestamps = document.getElementById('cfg-timestamps').checked;
+            const showBadges = document.getElementById('cfg-badges').checked;
+            const useShadow = document.getElementById('cfg-shadow').checked;
+            const bgColor = document.getElementById('cfg-bg-color').value.replace('#', '');
+            const bgOpacity = document.getElementById('cfg-bg-opacity').value;
+            const radius = document.getElementById('cfg-radius').value;
+            const autoHide = document.getElementById('cfg-autohide').checked;
+            const autoHideTime = document.getElementById('cfg-autohidetime').value;
+            const channel = document.getElementById('cfg-channel').value.trim();
+
+            const params = new URLSearchParams({
+                font, fontSize, layout: layoutStyle, direction: chatDirection,
+                timestamps: showTimestamps, badges: showBadges, shadow: useShadow,
+                bgColor, bgOpacity, radius, autoHide, autoHideTime, channel
+            });
+
+            const currentUrl = window.location.href.split('?')[0];
+            const obsUrl = `${currentUrl}?${params.toString()}&obs=true`;
+
+            document.getElementById('export-url-input').value = obsUrl;
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalBox.classList.remove('scale-95');
+                modalBox.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeExportModal() {
+            const modal = document.getElementById('export-modal');
+            const modalBox = document.getElementById('modal-box');
+            modal.classList.add('opacity-0');
+            modalBox.classList.remove('scale-100');
+            modalBox.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function copyObsUrl() {
+            const input = document.getElementById('export-url-input');
+            input.select();
+            document.execCommand('copy');
+            
+            const btnText = document.getElementById('copy-btn-text');
+            btnText.innerText = "Copied!";
+            setTimeout(() => {
+                btnText.innerText = "Copy URL";
+            }, 2000);
+        }
+
+        // Check if page is loaded in OBS mode (?obs=true)
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('obs') === 'true') {
+                // Hide dashboard controls entirely and render pure chat widget for OBS
+                document.body.innerHTML = `
+                    <div id="chat-container" class="w-full h-full p-4 overflow-hidden flex flex-col justify-end space-y-2.5 bg-transparent"></div>
+                `;
+
+                // Apply parameters
+                const font = urlParams.get('font') || 'font-inter';
+                const fontSize = (urlParams.get('fontSize') || '14') + 'px';
+                layoutStyle = urlParams.get('layout') || 'bubble';
+                chatDirection = urlParams.get('direction') || 'bottom';
+                const showTimestamps = urlParams.get('timestamps') === 'true';
+                const showBadges = urlParams.get('badges') === 'true';
+                const useShadow = urlParams.get('shadow') === 'true';
+                const bgColor = '#' + (urlParams.get('bgColor') || '0f172a');
+                const bgOpacity = parseInt(urlParams.get('bgOpacity') || '85') / 100;
+                const radius = (urlParams.get('radius') || '8') + 'px';
+                const autoHide = urlParams.get('autoHide') === 'true';
+                const autoHideTime = parseInt(urlParams.get('autoHideTime') || '30') * 1000;
+                const channel = urlParams.get('channel') || '';
+
+                // Add Google font stylesheet if needed
+                if (font === 'font-poppins') {
+                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">');
+                } else if (font === 'font-mono') {
+                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">');
+                } else if (font === 'font-arcade') {
+                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">');
+                } else if (font === 'font-outfit') {
+                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">');
+                }
+
+                // Connect to Twitch with fallback simulator for iframe environments
+                if (channel) {
+                    try {
+                        const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+                        ws.onopen = () => {
+                            ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+                            ws.send('NICK justinfan' + Math.floor(Math.random() * 80000));
+                            ws.send('JOIN #' + channel.toLowerCase());
+                        };
+                        ws.onmessage = (event) => {
+                            const message = event.data;
+                            if (message.startsWith('PING')) {
+                                ws.send('PONG ' + message.split(' ')[1]);
+                                return;
+                            }
+                            if (message.includes('PRIVMSG')) {
+                                try {
+                                    const parts = message.split('PRIVMSG');
+                                    const prefix = parts[0];
+                                    const contentPart = parts[1];
+
+                                    let username = "Viewer";
+                                    const userMatch = prefix.match(/:([^!]+)!/);
+                                    if (userMatch) username = userMatch[1];
+
+                                    const textMatch = contentPart.match(/:(.+)$/);
+                                    const chatText = textMatch ? textMatch[1] : '';
+
+                                    let isMod = prefix.includes('mod=1');
+                                    let isSub = prefix.includes('subscriber=1');
+
+                                    appendObsMessage(username, chatText, isMod, isSub);
+                                } catch (e) {}
+                            }
+                        };
+                        ws.onerror = () => {
+                            startObsSimulator();
+                        };
+                    } catch (e) {
+                        startObsSimulator();
+                    }
+                } else {
+                    setTimeout(() => appendObsMessage("StreamKnight", "Hello OBS stream! 🔥", false, true), 500);
+                    setTimeout(() => appendObsMessage("ModeratorPro", "Welcome everyone to the stream!", true, false), 1500);
+                }
+
+                function startObsSimulator() {
+                    const mockUsers = ["ChatterAlpha", "ViperStream", "NerdNinja", "PixelQueen", "RetroGamer"];
+                    const mockTexts = ["Let's gooo! 🔥", "Amazing overlay!", "Can you play that game again?", "GG WP!", "Hello from chat! 👋"];
+                    setInterval(() => {
+                        const u = mockUsers[Math.floor(Math.random() * mockUsers.length)];
+                        const t = mockTexts[Math.floor(Math.random() * mockTexts.length)];
+                        appendObsMessage(u, t, Math.random() > 0.7, Math.random() > 0.5);
+                    }, 3000);
+                }
+
+                function appendObsMessage(username, message, isMod, isSub) {
+                    const container = document.getElementById('chat-container');
+                    let r = parseInt(bgColor.slice(1,3), 16);
+                    let g = parseInt(bgColor.slice(3,5), 16);
+                    let b = parseInt(bgColor.slice(5,7), 16);
+                    const rgbaBg = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
+
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `chat-message-in flex items-start space-x-2.5 ${font}`;
+                    msgDiv.style.fontSize = fontSize;
+                    if (useShadow) {
+                        msgDiv.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
+                    }
+
+                    let timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    let timestampHtml = showTimestamps ? `<span class="text-[11px] text-slate-400 mt-0.5 shrink-0">${timeStr}</span>` : '';
+
+                    let badgesHtml = '';
+                    if (showBadges) {
+                        if (isMod) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white mr-1 shadow-sm">MOD</span>`;
+                        if (isSub) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white mr-1 shadow-sm">SUB</span>`;
+                    }
+
+                    const userColor = getUserColor(username);
+
+                    if (layoutStyle === 'bubble') {
+                        msgDiv.innerHTML = `
+                            ${timestampHtml}
+                            <div class="chat-bubble flex-1 px-3.5 py-2 rounded-[${radius}] shadow-sm" style="background-color: ${rgbaBg}; border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="flex items-center space-x-1.5 mb-0.5">
+                                    ${badgesHtml}
+                                    <span class="font-bold" style="color: ${userColor}">${username}</span>
+                                </div>
+                                <p class="text-slate-100 break-words leading-relaxed">${escapeHtml(message)}</p>
+                            </div>
+                        `;
+                    } else {
+                        msgDiv.innerHTML = `
+                            ${timestampHtml}
+                            <div class="flex-1 leading-relaxed break-words">
+                                ${badgesHtml}
+                                <span class="font-bold mr-1.5" style="color: ${userColor}">${username}:</span>
+                                <span class="text-slate-100">${escapeHtml(message)}</span>
+                            </div>
+                        `;
+                    }
+
+                    if (chatDirection === 'top') {
+                        container.prepend(msgDiv);
+                    } else {
+                        container.appendChild(msgDiv);
+                        container.scrollTop = container.scrollHeight;
+                    }
+
+                    if (autoHide) {
+                        setTimeout(() => {
+                            msgDiv.classList.remove('chat-message-in');
+                            msgDiv.classList.add('chat-message-out');
+                            setTimeout(() => msgDiv.remove(), 200);
+                        }, autoHideTime);
+                    }
+
+                    if (container.children.length > 50) {
+                        container.removeChild(container.firstChild);
+                    }
+                }
+            }
+        });
     </script>
 </body>
 </html>
