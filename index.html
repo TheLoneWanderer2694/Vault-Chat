@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YouTube Let's Watch & Playlist Manager with Chat Commands</title>
+<title>YouTube Let's Watch & Full Screen Reaction Mode</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -19,9 +19,11 @@
   body.obs-mode {
     background-color: transparent !important;
     padding: 0 !important;
+    margin: 0 !important;
     display: flex !important;
     justify-content: center !important;
     align-items: flex-start !important;
+    overflow: hidden !important;
   }
   body.obs-mode .control-panel-container {
     display: none !important;
@@ -30,6 +32,37 @@
     display: block !important;
     width: 100% !important;
     max-width: 420px !important;
+  }
+  /* Full screen overlay mode when triggered */
+  body.obs-mode.fullscreen-mode .overlay-container {
+    max-width: 100% !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    position: fixed !important;
+    inset: 0 !important;
+    background: rgba(2, 6, 23, 0.96) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 9999 !important;
+    padding: 2rem !important;
+  }
+  body.obs-mode.fullscreen-mode .overlay-container .glass-panel {
+    width: 100% !important;
+    max-width: 1100px !important;
+    height: 100% !important;
+    max-height: 85vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  body.obs-mode.fullscreen-mode .overlay-container .relative.w-full {
+    flex: 1 !important;
+    padding-top: 0 !important;
+    height: 100% !important;
+  }
+  body.obs-mode.fullscreen-mode .overlay-container .upcoming-section-wrapper {
+    display: none !important;
   }
   ::-webkit-scrollbar {
     width: 6px;
@@ -50,9 +83,9 @@
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-4 mb-6 gap-4">
       <div>
         <h1 class="text-2xl font-bold flex items-center gap-2 text-red-500">
-          <i class="fa-brands fa-youtube"></i> Let's Watch & Playlist Manager + Chat Bot
+          <i class="fa-brands fa-youtube"></i> Let's Watch & Full Screen Mode Manager
         </h1>
-        <p class="text-sm text-slate-400">Manage queue, playlists (with explicit creator name preservation), and Twitch/YouTube chat commands.</p>
+        <p class="text-sm text-slate-400">Manage queue, playlists, chat commands, and trigger full-screen reaction mode via dashboard or <code class="text-purple-400">!fullscreen</code> command.</p>
       </div>
       <div class="flex items-center gap-3">
         <button onclick="toggleObsMode()" class="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-2 rounded-lg font-medium transition border border-slate-700 flex items-center gap-2">
@@ -96,17 +129,27 @@
         </div>
       </div>
 
-      <!-- Right Col: Chat Commands & Simulator Hub -->
       <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-              <i class="fa-solid fa-terminal"></i> Chat Commands Hub & Live Feed
+              <i class="fa-solid fa-terminal"></i> Chat & Full Screen Controls
             </h3>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" id="chat-bot-toggle" checked onchange="toggleChatBot()" class="sr-only peer">
               <div class="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600"></div>
             </label>
+          </div>
+
+          <!-- Full Screen Mode Manual Toggle Button -->
+          <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3 mb-4 flex items-center justify-between">
+            <div>
+              <span class="text-xs font-bold text-white block">Full Screen Reaction Mode</span>
+              <span class="text-[10px] text-slate-400">Enlarges player to fill OBS screen</span>
+            </div>
+            <button onclick="toggleFullScreenMode()" id="fullscreen-toggle-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-slate-700 flex items-center gap-1.5">
+              <i class="fa-solid fa-expand"></i> <span id="fullscreen-btn-text">Enable</span>
+            </button>
           </div>
 
           <!-- Twitch/YouTube Live Chat Connection Box -->
@@ -118,10 +161,28 @@
               <span id="chat-connection-status" class="text-[9px] px-2 py-0.5 rounded font-mono bg-amber-950 text-amber-400 border border-amber-800">Disconnected</span>
             </div>
             <div class="flex gap-2">
-              <input type="text" id="stream-channel-input" placeholder="Enter Twitch/YT Channel Name" value="MyStreamer" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
+              <input type="text" id="stream-channel-input" placeholder="Channel Name" value="MyStreamer" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
               <button id="chat-connect-btn" onclick="toggleStreamChatConnection()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0">Connect</button>
             </div>
-            <p class="text-[10px] text-slate-500">Connect to receive real chat viewer commands instantly, or test below.</p>
+          </div>
+
+          <!-- Chat Commands Reference Guide -->
+          <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 mb-4 space-y-2">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-purple-400 block mb-1">Active Bot Commands</span>
+            <div class="space-y-1 text-[11px] text-slate-300 font-mono">
+              <div class="flex justify-between items-center bg-slate-900/80 px-2 py-1 rounded">
+                <span class="text-purple-300 font-bold">!request &lt;url&gt;</span>
+                <span class="text-slate-400 text-[10px]">Add video</span>
+              </div>
+              <div class="flex justify-between items-center bg-slate-900/80 px-2 py-1 rounded">
+                <span class="text-purple-300 font-bold">!fullscreen</span>
+                <span class="text-slate-400 text-[10px]">Toggle full screen</span>
+              </div>
+              <div class="flex justify-between items-center bg-slate-900/80 px-2 py-1 rounded">
+                <span class="text-purple-300 font-bold">!skip / !queue</span>
+                <span class="text-slate-400 text-[10px]">Queue controls</span>
+              </div>
+            </div>
           </div>
 
           <!-- Chat Simulator Input -->
@@ -129,7 +190,7 @@
             <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Simulate Incoming Chat Message</label>
             <div class="flex gap-2">
               <input type="text" id="sim-user-input" placeholder="Username" value="SuperFan99" class="w-1/3 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
-              <input type="text" id="sim-msg-input" placeholder="e.g. !request https://youtu.be/..." onkeypress="if(event.key==='Enter') submitSimulatedChat()" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
+              <input type="text" id="sim-msg-input" placeholder="e.g. !fullscreen" onkeypress="if(event.key==='Enter') submitSimulatedChat()" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
               <button onclick="submitSimulatedChat()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition">Send</button>
             </div>
           </div>
@@ -150,32 +211,35 @@
   </div>
 
   <div id="overlay-container" class="overlay-container w-full max-w-[420px]">
-    <div class="glass-panel rounded-2xl p-4 shadow-2xl border border-slate-700/60 space-y-3">
+    <div class="glass-panel rounded-2xl p-4 shadow-2xl border border-slate-700/60 space-y-3 flex flex-col">
       <!-- Header -->
-      <div class="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-2.5 shrink-0">
         <div class="flex items-center gap-2">
           <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
           <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Let's Watch Queue</h2>
         </div>
-        <span id="overlay-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-medium">0 upcoming</span>
+        <div class="flex items-center gap-2">
+          <span id="fullscreen-badge" class="hidden text-[9px] bg-purple-900/80 text-purple-200 px-2 py-0.5 rounded font-bold uppercase tracking-wider animate-pulse">Full Screen Active</span>
+          <span id="overlay-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-medium">0 upcoming</span>
+        </div>
       </div>
 
       <!-- Now Playing Box -->
-      <div class="bg-gradient-to-r from-red-950/40 to-slate-900/80 border border-red-500/30 rounded-xl p-3">
-        <div class="text-[10px] font-semibold text-red-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+      <div class="bg-gradient-to-r from-red-950/40 to-slate-900/80 border border-red-500/30 rounded-xl p-3 flex flex-col flex-1">
+        <div class="text-[10px] font-semibold text-red-400 uppercase tracking-wider mb-1.5 flex items-center justify-between shrink-0">
           <span class="flex items-center gap-1.5"><i class="fa-solid fa-play text-[8px]"></i> Now Watching</span>
           <span id="player-status-badge" class="text-[9px] bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-mono">Inactive</span>
         </div>
         
-        <div class="mb-2 flex items-center gap-2">
+        <div class="mb-2 flex items-center gap-2 shrink-0">
           <span class="bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1.5 shadow-sm">
             <i class="fa-solid fa-user-tag text-[11px]"></i> <span id="overlay-current-creator">No YouTuber assigned</span>
           </span>
         </div>
 
-        <div id="overlay-current-title" class="text-sm font-semibold text-white truncate mb-2.5">Waiting for selection...</div>
+        <div id="overlay-current-title" class="text-sm font-semibold text-white truncate mb-2.5 shrink-0">Waiting for selection...</div>
         
-        <div class="relative w-full pt-[56.25%] bg-black/90 rounded-lg overflow-hidden border border-slate-800 shadow-inner">
+        <div class="relative w-full pt-[56.25%] bg-black/90 rounded-lg overflow-hidden border border-slate-800 shadow-inner flex-1">
           <div id="embed-container" class="absolute inset-0 w-full h-full flex items-center justify-center">
             <iframe id="overlay-iframe" src="" class="w-full h-full border-0 hidden" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
             <div id="embed-placeholder" class="absolute inset-0 w-full h-full flex items-center justify-center text-slate-500 text-xs bg-slate-950">
@@ -189,19 +253,8 @@
       </div>
 
       <!-- Upcoming Queue List -->
-      <div class="space-y-1.5 max-h-[190px] overflow-y-auto pr-1" id="overlay-upcoming-list">
+      <div class="space-y-1.5 max-h-[190px] overflow-y-auto pr-1 shrink-0 upcoming-section-wrapper" id="overlay-upcoming-list">
         <div class="text-xs text-slate-500 italic text-center py-3">Queue is empty</div>
-      </div>
-
-      <!-- Live Chat Activity Ticker -->
-      <div id="chat-ticker-box" class="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5 text-[11px]">
-        <div class="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-          <span><i class="fa-solid fa-comments"></i> Stream Chat Ticker</span>
-          <span class="text-[9px] text-slate-500">Auto-Commands Active</span>
-        </div>
-        <div id="chat-ticker-messages" class="space-y-1 max-h-24 overflow-y-auto font-mono text-[10px]">
-          <div class="text-slate-500 italic">Chat bot online. Try typing !request in chat!</div>
-        </div>
       </div>
     </div>
   </div>
@@ -213,13 +266,14 @@
       chatBotEnabled: true,
       chatLog: [],
       chatConnected: false,
-      channelName: ''
+      channelName: '',
+      isFullScreen: false
     };
 
     let player = null;
     let isObserverMode = false;
     let mockChatInterval = null;
-    const bc = new BroadcastChannel('yt_lets_watch_channel_v14');
+    const bc = new BroadcastChannel('yt_lets_watch_channel_v16');
 
     bc.onmessage = (event) => {
       if (event.data && event.data.type === 'STATE_UPDATE') {
@@ -247,8 +301,13 @@
       }
     }
 
+    function toggleFullScreenMode() {
+      state.isFullScreen = !state.isFullScreen;
+      saveState();
+    }
+
     function loadState() {
-      const saved = localStorage.getItem('yt_lets_watch_state_v14');
+      const saved = localStorage.getItem('yt_lets_watch_state_v16');
       if (saved) {
         try { state = JSON.parse(saved); } catch(e) {}
       }
@@ -257,7 +316,7 @@
 
     function saveState() {
       autoPromoteQueue();
-      localStorage.setItem('yt_lets_watch_state_v14', JSON.stringify(state));
+      localStorage.setItem('yt_lets_watch_state_v16', JSON.stringify(state));
       bc.postMessage({ type: 'STATE_UPDATE', state: state });
       renderAll();
     }
@@ -355,7 +414,6 @@
         btn.disabled = true;
       }
 
-      let addedCount = 0;
       for (const line of lines) {
         let targetUrl = line;
         let lineCreator = defaultOverride;
@@ -372,7 +430,6 @@
         } else {
           state.queue.push(details);
         }
-        addedCount++;
       }
 
       if (!overrideTargetUrl) {
@@ -388,7 +445,6 @@
       }
 
       saveState();
-      return addedCount;
     }
 
     function playNext() {
@@ -445,18 +501,15 @@
           statusBadge.innerText = `Connected (${chan})`;
           statusBadge.className = "text-[9px] px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-400 border border-emerald-800";
         }
-
-        addBotResponse(`Connected to live stream chat for channel: ${chan}`);
         
-        // Simulate background viewer chat activity
         if (mockChatInterval) clearInterval(mockChatInterval);
         mockChatInterval = setInterval(() => {
           const randomViewers = ['PixelGamer', 'RetroFan', 'SpeedrunnerX', 'ChillViewer'];
           const randomViewer = randomViewers[Math.floor(Math.random() * randomViewers.length)];
-          const sampleMessages = ['Hello everyone!', '!np', '!queue', 'Awesome stream!'];
+          const sampleMessages = ['!fullscreen', '!queue', 'Great video!'];
           const sampleMsg = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
           handleChatMessage(randomViewer, sampleMsg);
-        }, 18000);
+        }, 22000);
 
       } else {
         state.chatConnected = false;
@@ -470,7 +523,6 @@
           statusBadge.innerText = "Disconnected";
           statusBadge.className = "text-[9px] px-2 py-0.5 rounded font-mono bg-amber-950 text-amber-400 border border-amber-800";
         }
-        addBotResponse(`Disconnected from stream chat.`);
       }
       saveState();
     }
@@ -489,27 +541,13 @@
       if (trimmed.startsWith('!request ')) {
         const urlToRequest = trimmed.replace('!request ', '').trim();
         await addLinksToQueue(urlToRequest, username);
-        addBotResponse(`@${username} Successfully queued your request!`);
+      } else if (trimmed === '!fullscreen') {
+        state.isFullScreen = !state.isFullScreen;
       } else if (trimmed === '!skip') {
         playNext();
-        addBotResponse(`@${username} Skipped to next queue item.`);
-      } else if (trimmed === '!np') {
-        if (state.current) {
-          addBotResponse(`Now Playing: [${state.current.creator}] ${state.current.title}`);
-        } else {
-          addBotResponse(`No video currently playing in queue.`);
-        }
-      } else if (trimmed === '!queue') {
-        const count = state.queue.length + (state.current ? 1 : 0);
-        addBotResponse(`Queue status: ${count} items remaining.`);
       }
 
       saveState();
-    }
-
-    function addBotResponse(text) {
-      if (!state.chatLog) state.chatLog = [];
-      state.chatLog.push({ user: 'Bot', text: text, isBot: true });
     }
 
     function submitSimulatedChat() {
@@ -603,6 +641,22 @@
       const chatBotToggle = document.getElementById('chat-bot-toggle');
       if (chatBotToggle) chatBotToggle.checked = state.chatBotEnabled;
 
+      const fullscreenBadge = document.getElementById('fullscreen-badge');
+      const fullscreenBtnText = document.getElementById('fullscreen-btn-text');
+      const fullscreenToggleBtn = document.getElementById('fullscreen-toggle-btn');
+
+      if (state.isFullScreen) {
+        document.body.classList.add('fullscreen-mode');
+        if (fullscreenBadge) fullscreenBadge.classList.remove('hidden');
+        if (fullscreenBtnText) fullscreenBtnText.innerText = "Disable Full Screen";
+        if (fullscreenToggleBtn) fullscreenToggleBtn.className = "bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-purple-500 flex items-center gap-1.5";
+      } else {
+        document.body.classList.remove('fullscreen-mode');
+        if (fullscreenBadge) fullscreenBadge.classList.add('hidden');
+        if (fullscreenBtnText) fullscreenBtnText.innerText = "Enable";
+        if (fullscreenToggleBtn) fullscreenToggleBtn.className = "bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-slate-700 flex items-center gap-1.5";
+      }
+
       const controlList = document.getElementById('control-queue-list');
       const counterBadge = document.getElementById('queue-counter');
       if (counterBadge) counterBadge.innerText = `${state.queue.length + (state.current ? 1 : 0)} items`;
@@ -690,22 +744,6 @@
           overlayUpcoming.innerHTML = upcomingHtml;
         }
       }
-
-      // Render Chat Ticker
-      const chatTicker = document.getElementById('chat-ticker-messages');
-      if (chatTicker) {
-        if (!state.chatLog || state.chatLog.length === 0) {
-          chatTicker.innerHTML = `<div class="text-slate-500 italic">No chat messages yet</div>`;
-        } else {
-          let chatHtml = '';
-          state.chatLog.forEach(msg => {
-            const userColor = msg.isBot ? 'text-purple-400 font-bold' : 'text-blue-300 font-semibold';
-            chatHtml += `<div><span class="${userColor}">${msg.user}:</span> <span class="text-slate-300">${msg.text}</span></div>`;
-          });
-          chatTicker.innerHTML = chatHtml;
-          chatTicker.scrollTop = chatTicker.scrollHeight;
-        }
-      }
     }
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -715,7 +753,7 @@
     });
 
     window.addEventListener('storage', (e) => {
-      if (e.key === 'yt_lets_watch_state_v14') {
+      if (e.key === 'yt_lets_watch_state_v16') {
         loadState();
         renderAll();
       }
