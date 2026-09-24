@@ -784,13 +784,11 @@
                 });
             }
 
-            // Update stats
             sessionStats.totalMsgs++;
             sessionStats.uniqueUsers.add(username);
             if (isCheer) sessionStats.cheerCount++;
             sessionStats.userMsgCounts[username] = (sessionStats.userMsgCounts[username] || 0) + 1;
             
-            // Push to velocity history
             const currentLast = sessionStats.velocityHistory[sessionStats.velocityHistory.length - 1] || 1;
             sessionStats.velocityHistory.push(currentLast + 1);
 
@@ -1139,6 +1137,119 @@
             }, 2000);
         }
 
+        // Global OBS standalone execution helper
+        function appendObsMessageDirect(username, message, isMod, isSub, isCheer, settings) {
+            const container = document.getElementById('chat-container');
+            if (!container) return;
+
+            let processedMessage = message;
+            if (settings.censorEnabled && settings.blacklistInput) {
+                const badWords = settings.blacklistInput.split(',').map(w => w.trim()).filter(w => w.length > 0);
+                badWords.forEach(word => {
+                    const regex = new RegExp(word, 'gi');
+                    processedMessage = processedMessage.replace(regex, '*'.repeat(word.length));
+                });
+            }
+
+            let r = parseInt(settings.bgColor.slice(1,3), 16);
+            let g = parseInt(settings.bgColor.slice(3,5), 16);
+            let b = parseInt(settings.bgColor.slice(5,7), 16);
+            const rgbaBg = `rgba(${r}, ${g}, ${b}, ${settings.bgOpacity})`;
+
+            let animClass = 'chat-anim-fade';
+            if (settings.animType === 'pop') animClass = 'chat-anim-pop';
+            if (settings.animType === 'none') animClass = '';
+            if (isCheer) animClass += ' cheer-highlight';
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `${animClass} flex items-start space-x-2.5 ${settings.font}`;
+            msgDiv.style.fontSize = settings.fontSize;
+            msgDiv.style.color = settings.textColor;
+            if (settings.useShadow) {
+                msgDiv.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
+            }
+
+            let timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            let timestampHtml = settings.showTimestamps ? `<span class="text-[11px] text-slate-400 mt-0.5 shrink-0">${timeStr}</span>` : '';
+
+            let badgesHtml = '';
+            if (settings.showBadges) {
+                if (isMod) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white mr-1 shadow-sm">MOD</span>`;
+                if (isSub) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white mr-1 shadow-sm">SUB</span>`;
+                if (isCheer) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 mr-1 shadow-sm"><i class="fa-solid fa-gem mr-1"></i> CHEER 100</span>`;
+            }
+
+            let userColor = getUserColor(username);
+            if (settings.nameStyle === 'gradient') userColor = settings.highlightColor;
+            if (settings.nameStyle === 'accent') userColor = settings.highlightColor;
+
+            let isHighlighted = isCheer;
+            if (settings.keywordsInput) {
+                const keywords = settings.keywordsInput.split(',').map(k => k.trim());
+                if (keywords.some(k => k && processedMessage.toLowerCase().includes(k))) {
+                    isHighlighted = true;
+                }
+            }
+
+            let borderColor = settings.useBorder ? `border: 1px solid ${settings.highlightColor}4D;` : 'border: 1px solid rgba(255,255,255,0.08);';
+            if (isCheer) {
+                borderColor = `border: 2px solid #f59e0b; box-shadow: 0 0 20px rgba(245,158,11,0.5); background-color: rgba(245, 158, 11, 0.08);`;
+            } else if (isHighlighted) {
+                borderColor = `border: 2px solid ${settings.highlightColor}; box-shadow: 0 0 15px ${settings.highlightColor}66;`;
+            }
+
+            let formattedContent = formatEmotesAndLinks(processedMessage);
+
+            if (settings.layoutStyle === 'bubble') {
+                msgDiv.innerHTML = `
+                    ${timestampHtml}
+                    <div class="chat-bubble flex-1 px-3.5 py-2 rounded-[${settings.radius}] shadow-sm" style="background-color: ${rgbaBg}; ${borderColor}">
+                        <div class="flex items-center space-x-1.5 mb-0.5">
+                            ${badgesHtml}
+                            <span class="font-bold" style="color: ${userColor}">${username}</span>
+                        </div>
+                        <p class="break-words leading-relaxed flex flex-wrap items-center gap-1" style="color: ${settings.textColor}">${formattedContent}</p>
+                    </div>
+                `;
+            } else {
+                msgDiv.innerHTML = `
+                    ${timestampHtml}
+                    <div class="flex-1 leading-relaxed break-words">
+                        ${badgesHtml}
+                        <span class="font-bold mr-1.5" style="color: ${userColor}">${username}:</span>
+                        <span style="color: ${settings.textColor}" class="inline-flex flex-wrap items-center gap-1">${formattedContent}</span>
+                    </div>
+                `;
+            }
+
+            if (settings.chatDirection === 'top') {
+                container.prepend(msgDiv);
+            } else {
+                container.appendChild(msgDiv);
+                container.scrollTop = container.scrollHeight;
+            }
+
+            if (settings.ttsEnabled && 'speechSynthesis' in window) {
+                if (!settings.ttsSubOnly || isMod || isSub) {
+                    const utterance = new SpeechSynthesisUtterance(`${username} says: ${message}`);
+                    utterance.rate = settings.ttsSpeed;
+                    window.speechSynthesis.speak(utterance);
+                }
+            }
+
+            if (settings.autoHide) {
+                setTimeout(() => {
+                    msgDiv.classList.remove(animClass);
+                    msgDiv.classList.add('chat-message-out');
+                    setTimeout(() => msgDiv.remove(), 200);
+                }, settings.autoHideTime);
+            }
+
+            if (container.children.length > settings.maxBuffer) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('obs') === 'true') {
@@ -1177,6 +1288,13 @@
                 const blockBots = urlParams.get('blockbots') === 'true';
                 const customCss = decodeURIComponent(urlParams.get('customcss') || '');
 
+                const obsSettings = {
+                    font, fontSize, textColor, nameStyle, highlightColor, layoutStyle, chatDirection,
+                    showTimestamps, showBadges, useShadow, useBorder, bgColor, bgOpacity, radius,
+                    animType, autoHide, autoHideTime, maxBuffer, keywordsInput, ttsEnabled, ttsSpeed,
+                    ttsSubOnly, sfxEnabled, sfxKeywords, censorEnabled, blacklistInput, blockLinks, blockBots
+                };
+
                 if (customCss) {
                     const styleTag = document.createElement('style');
                     styleTag.innerHTML = customCss;
@@ -1195,6 +1313,16 @@
                     document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&display=swap" rel="stylesheet">');
                 } else if (font === 'font-marker') {
                     document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">');
+                }
+
+                function startObsSimulator() {
+                    const mockUsers = ["ChatterAlpha", "ViperStream", "NerdNinja", "PixelQueen", "RetroGamer"];
+                    const mockTexts = ["Let's gooo! LUL", "Amazing overlay!", "Can you play that game again?", "GG WP PogChamp!", "Hello from chat! 👋"];
+                    setInterval(() => {
+                        const u = mockUsers[Math.floor(Math.random() * mockUsers.length)];
+                        const t = mockTexts[Math.floor(Math.random() * mockTexts.length)];
+                        appendObsMessageDirect(u, t, Math.random() > 0.7, Math.random() > 0.5, Math.random() > 0.8, obsSettings);
+                    }, 3000);
                 }
 
                 if (channel) {
@@ -1215,7 +1343,7 @@
                             if (message.includes('PRIVMSG')) {
                                 const parsed = parseIrcMessage(message);
                                 if (parsed.chatText) {
-                                    appendObsMessage(parsed.username, parsed.chatText, parsed.isMod, parsed.isSub, parsed.isCheer);
+                                    appendObsMessageDirect(parsed.username, parsed.chatText, parsed.isMod, parsed.isSub, parsed.isCheer, obsSettings);
                                 }
                             }
                         };
@@ -1226,1447 +1354,8 @@
                         startObsSimulator();
                     }
                 } else {
-                    setTimeout(() => appendObsMessage("StreamKnight", "Hello OBS stream! Kappa 🔥", false, true, false), 500);
-                    setTimeout(() => appendObsMessage("DonationKing", "Cheering 100 bits! Let's gooo!", false, false, true), 1500);
-                }
-
-                function startObsSimulator() {
-                    const mockUsers = ["ChatterAlpha", "ViperStream", "NerdNinja", "PixelQueen", "RetroGamer"];
-                    const mockTexts = ["Let's gooo! LUL", "Amazing overlay!", "Can you play that game again?", "GG WP PogChamp!", "Hello from chat! 👋"];
-                    setInterval(() => {
-                        const u = mockUsers[Math.floor(Math.random() * mockUsers.length)];
-                        const t = mockTexts[Math.floor(Math.random() * mockTexts.length)];
-                        appendObsMessage(u, t, Math.random() > 0.7, Math.random() > 0.5, Math.random() > 0.8);
-                    }, 3000);
-                }
-
-                function appendObsMessage(username, message, isMod, isSub, isCheer) {
-                    const container = document.getElementById('chat-container');
-
-                    let processedMessage = message;
-                    if (censorEnabled && blacklistInput) {
-                        const badWords = blacklistInput.split(',').map(w => w.trim()).filter(w => w.length > 0);
-                        badWords.forEach(word => {
-                            const regex = new RegExp(word, 'gi');
-                            processedMessage = processedMessage.replace(regex, '*'.repeat(word.length));
-                        });
-                    }
-
-                    let r = parseInt(bgColor.slice(1,3), 16);
-                    let g = parseInt(bgColor.slice(3,5), 16);
-                    let b = parseInt(bgColor.slice(5,7), 16);
-                    const rgbaBg = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
-
-                    let animClass = 'chat-anim-fade';
-                    if (animType === 'pop') animClass = 'chat-anim-pop';
-                    if (animType === 'none') animClass = '';
-                    if (isCheer) animClass += ' cheer-highlight';
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `${animClass} flex items-start space-x-2.5 ${font}`;
-                    msgDiv.style.fontSize = fontSize;
-                    msgDiv.style.color = textColor;
-                    if (useShadow) {
-                        msgDiv.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
-                    }
-
-                    let timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    let timestampHtml = showTimestamps ? `<span class="text-[11px] text-slate-400 mt-0.5 shrink-0">${timeStr}</span>` : '';
-
-                    let badgesHtml = '';
-                    if (showBadges) {
-                        if (isMod) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white mr-1 shadow-sm">MOD</span>`;
-                        if (isSub) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white mr-1 shadow-sm">SUB</span>`;
-                        if (isCheer) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 mr-1 shadow-sm"><i class="fa-solid fa-gem mr-1"></i> CHEER 100</span>`;
-                    }
-
-                    let userColor = getUserColor(username);
-                    if (nameStyle === 'gradient') userColor = highlightColor;
-                    if (nameStyle === 'accent') userColor = highlightColor;
-
-                    let isHighlighted = isCheer;
-                    if (keywordsInput) {
-                        const keywords = keywordsInput.split(',').map(k => k.trim());
-                        if (keywords.some(k => k && processedMessage.toLowerCase().includes(k))) {
-                            isHighlighted = true;
-                        }
-                    }
-
-                    let borderColor = useBorder ? `border: 1px solid ${highlightColor}4D;` : 'border: 1px solid rgba(255,255,255,0.08);';
-                    if (isCheer) {
-                        borderColor = `border: 2px solid #f59e0b; box-shadow: 0 0 20px rgba(245,158,11,0.5); background-color: rgba(245, 158, 11, 0.08);`;
-                    } else if (isHighlighted) {
-                        borderColor = `border: 2px solid ${highlightColor}; box-shadow: 0 0 15px ${highlightColor}66;`;
-                    }
-
-                    let formattedContent = formatEmotesAndLinks(processedMessage);
-
-                    if (layoutStyle === 'bubble') {
-                        msgDiv.innerHTML = `
-                            ${timestampHtml}
-                            <div class="chat-bubble flex-1 px-3.5 py-2 rounded-[${radius}] shadow-sm" style="background-color: ${rgbaBg}; ${borderColor}">
-                                <div class="flex items-center space-x-1.5 mb-0.5">
-                                    ${badgesHtml}
-                                    <span class="font-bold" style="color: ${userColor}">${username}</span>
-                                </div>
-                                <p class="break-words leading-relaxed flex flex-wrap items-center gap-1" style="color: ${textColor}">${formattedContent}</p>
-                            </div>
-                        `;
-                    } else {
-                        msgDiv.innerHTML = `
-                            ${timestampHtml}
-                            <div class="flex-1 leading-relaxed break-words">
-                                ${badgesHtml}
-                                <span class="font-bold mr-1.5" style="color: ${userColor}">${username}:</span>
-                                <span style="color: ${textColor}" class="inline-flex flex-wrap items-center gap-1">${formattedContent}</span>
-                            </div>
-                        `;
-                    }
-
-                    if (chatDirection === 'top') {
-                        container.prepend(msgDiv);
-                    } else {
-                        container.appendChild(msgDiv);
-                        container.scrollTop = container.scrollHeight;
-                    }
-
-                    if (ttsEnabled && 'speechSynthesis' in window) {
-                        if (!ttsSubOnly || isMod || isSub) {
-                            const utterance = new SpeechSynthesisUtterance(`${username} says: ${message}`);
-                            utterance.rate = ttsSpeed;
-                            window.speechSynthesis.speak(utterance);
-                        }
-                    }
-
-                    if (autoHide) {
-                        setTimeout(() => {
-                            msgDiv.classList.remove(animClass);
-                            msgDiv.classList.add('chat-message-out');
-                            setTimeout(() => msgDiv.remove(), 200);
-                        }, autoHideTime);
-                    }
-
-                    if (container.children.length > maxBuffer) {
-                        container.removeChild(container.firstChild);
-                    }
-                }
-            }
-        });
-    </script>
-</body>
-</html>            from { opacity: 1; transform: scale(1); }
-            to { opacity: 0; transform: scale(0.95); }
-        }
-        @keyframes bounceIn {
-            0% { opacity: 0; transform: scale(0.8) translateY(10px); }
-            60% { opacity: 1; transform: scale(1.03) translateY(-4px); }
-            100% { opacity: 1; transform: scale(1) translateY(0); }
-        }
-        @keyframes cheerPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.02); }
-        }
-        @keyframes alertSlideIn {
-            0% { transform: translateY(-50px) scale(0.9); opacity: 0; }
-            70% { transform: translateY(5px) scale(1.02); opacity: 1; }
-            100% { transform: translateY(0) scale(1); opacity: 1; }
-        }
-        .chat-anim-fade { animation: fadeInSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .chat-anim-pop { animation: bounceIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-        .chat-message-out { animation: fadeOutZoom 0.2s ease-in forwards; }
-        .cheer-highlight { animation: cheerPulse 1.5s infinite ease-in-out; }
-        .alert-banner-anim { animation: alertSlideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
-        ::-webkit-scrollbar-thumb { background: rgba(100,100,100,0.3); border-radius: 3px; }
-    </style>
-</head>
-<body class="h-full bg-slate-950 text-slate-100 font-inter antialiased overflow-hidden flex flex-col">
-
-    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
-        <div class="flex items-center space-x-3">
-            <div class="bg-gradient-to-tr from-purple-600 to-indigo-500 text-white p-2.5 rounded-xl shadow-lg shadow-purple-900/30">
-                <i class="fa-solid fa-comments text-lg"></i>
-            </div>
-            <div>
-                <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-purple-400 to-indigo-300 bg-clip-text text-transparent">TwitchChat Forge Pro+</h1>
-                <p class="text-xs text-slate-400">Advanced OBS Browser Source & Dynamic Widget Studio</p>
-            </div>
-        </div>
-        <div class="flex items-center space-x-3">
-            <button id="toggle-view-btn" onclick="toggleViewMode()" class="px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center space-x-2">
-                <i class="fa-solid fa-eye"></i>
-                <span id="view-mode-text">Test Simulator</span>
-            </button>
-            <button onclick="openExportModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-600/20 transition flex items-center space-x-2">
-                <i class="fa-solid fa-link"></i>
-                <span>Get OBS URL</span>
-            </button>
-        </div>
-    </header>
-
-    <div class="flex-1 flex overflow-hidden">
-        
-        <!-- SIDEBAR CONTROLS -->
-        <aside class="w-96 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 select-none">
-            <div class="grid grid-cols-6 border-b border-slate-800 text-[11px] font-semibold text-slate-400">
-                <button onclick="switchTab('appearance')" id="tab-appearance" class="py-3 text-center border-b-2 border-purple-500 text-purple-400 transition" title="Appearance"><i class="fa-solid fa-palette"></i></button>
-                <button onclick="switchTab('colors')" id="tab-colors" class="py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition" title="Colors"><i class="fa-solid fa-droplet"></i></button>
-                <button onclick="switchTab('behavior')" id="tab-behavior" class="py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition" title="Behavior"><i class="fa-solid fa-sliders"></i></button>
-                <button onclick="switchTab('advanced')" id="tab-advanced" class="py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition" title="TTS & Alerts"><i class="fa-solid fa-robot"></i></button>
-                <button onclick="switchTab('analytics')" id="tab-analytics" class="py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition" title="Analytics"><i class="fa-solid fa-chart-line"></i></button>
-                <button onclick="switchTab('simulate')" id="tab-simulate" class="py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition" title="Simulator"><i class="fa-solid fa-vial"></i></button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto p-5 space-y-6" id="sidebar-content">
-                
-                <!-- TAB 1: APPEARANCE -->
-                <div id="panel-appearance" class="space-y-5">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Font Family</label>
-                        <select id="cfg-font" onchange="updateConfig()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
-                            <option value="font-inter">Inter (Clean & Modern)</option>
-                            <option value="font-poppins">Poppins (Rounded & Friendly)</option>
-                            <option value="font-outfit">Outfit (Sleek Geometric)</option>
-                            <option value="font-mono">Roboto Mono (Developer)</option>
-                            <option value="font-arcade">Press Start 2P (Retro Arcade)</option>
-                            <option value="font-cinzel">Cinzel (Fantasy & RPG)</option>
-                            <option value="font-marker">Permanent Marker (Comic)</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Font Size (<span id="val-fontsize">14</span>px)</label>
-                        <input type="range" id="cfg-fontsize" min="11" max="26" value="14" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Message Layout</label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="setLayout('bubble')" id="layout-bubble" class="p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition">Bubbles</button>
-                            <button onclick="setLayout('clean')" id="layout-clean" class="p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition">Clean Line</button>
-                        </div>
-                    </div>
-
-                    <div id="bubble-options" class="space-y-4 pt-2 border-t border-slate-800/60">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Corner Radius (<span id="val-radius">8</span>px)</label>
-                            <input type="range" id="cfg-radius" min="0" max="28" value="8" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Bubble Border Style</label>
-                            <label class="flex items-center space-x-3 cursor-pointer mb-2">
-                                <input type="checkbox" id="cfg-border" checked onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                                <span class="text-sm text-slate-300">Enable Subtly Glowing Border</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60 space-y-3">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Badges & Elements</label>
-                        <label class="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" id="cfg-badges" checked onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Show Twitch Badges (Mod/Sub/Bits)</span>
-                        </label>
-                        <label class="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" id="cfg-timestamps" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Show Timestamps</span>
-                        </label>
-                        <label class="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" id="cfg-shadow" checked onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Text Drop Shadow (OBS Legibility)</span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- TAB 2: COLORS -->
-                <div id="panel-colors" class="space-y-5 hidden">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Widget Background Color & Opacity</label>
-                        <div class="flex items-center space-x-3 mb-3">
-                            <input type="color" id="cfg-bg-color" value="#0f172a" oninput="updateConfig()" class="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
-                            <div class="flex-1">
-                                <input type="range" id="cfg-bg-opacity" min="0" max="100" value="85" oninput="updateConfig()" class="w-full accent-purple-500">
-                                <span class="text-[10px] text-slate-400">Opacity: <span id="val-opacity">85</span>%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Message Text Color</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="color" id="cfg-text-color" value="#f1f5f9" oninput="updateConfig()" class="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
-                            <span class="text-xs text-slate-400">Default: Pure Light Slate</span>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Username Color Mode</label>
-                        <select id="cfg-namestyle" onchange="updateConfig()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
-                            <option value="twitch">Twitch User Assigned Colors</option>
-                            <option value="gradient">Neon Gradient Rainbow</option>
-                            <option value="accent">Solid Accent Purple</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Highlight Accent Theme Color</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="color" id="cfg-highlight-color" value="#a855f7" oninput="updateConfig()" class="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
-                            <span class="text-xs text-slate-400">Custom Cheers & Keyword Glow</span>
-                        </div>
-                    </div>
-
-                    <div class="p-3 bg-purple-950/20 border border-purple-900/30 rounded-xl">
-                        <p class="text-xs text-purple-300"><i class="fa-solid fa-lightbulb mr-1"></i> Tip: Set opacity to 0% for zero background overlay in OBS studio!</p>
-                    </div>
-                </div>
-
-                <!-- TAB 3: BEHAVIOR -->
-                <div id="panel-behavior" class="space-y-5 hidden">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Message Entrance Animation</label>
-                        <select id="cfg-animation" onchange="updateConfig()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
-                            <option value="fade">Fade In + Slide Up</option>
-                            <option value="pop">Bouncy Pop In</option>
-                            <option value="none">None (Instant)</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Auto-Hide Old Messages</label>
-                        <label class="flex items-center space-x-3 cursor-pointer mb-3">
-                            <input type="checkbox" id="cfg-autohide" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Fade out messages after delay</span>
-                        </label>
-                        <div id="autohide-settings" class="space-y-2 opacity-50 pointer-events-none transition">
-                            <label class="block text-xs text-slate-400">Hide after (<span id="val-autohidetime">30</span> seconds)</label>
-                            <input type="range" id="cfg-autohidetime" min="5" max="120" value="30" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
-                        </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Chat Direction</label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="setDirection('bottom')" id="dir-bottom" class="p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition">Newest at Bottom</button>
-                            <button onclick="setDirection('top')" id="dir-top" class="p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition">Newest at Top</button>
-                        </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Max Chat Buffer Limit</label>
-                        <select id="cfg-maxbuffer" onchange="updateConfig()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
-                            <option value="30">Keep last 30 messages</option>
-                            <option value="50" selected>Keep last 50 messages</option>
-                            <option value="100">Keep last 100 messages</option>
-                        </select>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Real Twitch Channel Connection</label>
-                        <div class="flex space-x-2">
-                            <input type="text" id="cfg-channel" placeholder="e.g. ninja, shroud" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
-                            <button onclick="connectTwitch()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition">Connect</button>
-                        </div>
-                        <p id="connection-status" class="text-[11px] text-slate-500 mt-2">Status: Using Simulator Mode</p>
-                    </div>
-                </div>
-
-                <!-- TAB 4: TTS & ALERTS -->
-                <div id="panel-advanced" class="space-y-5 hidden">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Text-to-Speech (TTS) Voice Reader</label>
-                        <label class="flex items-center space-x-3 cursor-pointer mb-3">
-                            <input type="checkbox" id="cfg-tts" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Read incoming chat aloud</span>
-                        </label>
-                        <div id="tts-settings" class="space-y-3 opacity-50 pointer-events-none transition">
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Select Voice Speed (<span id="val-ttsspeed">1.0</span>x)</label>
-                                <input type="range" id="cfg-ttsspeed" min="0.7" max="1.5" step="0.1" value="1.0" oninput="updateConfig()" class="w-full accent-purple-500 cursor-pointer">
-                            </div>
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="checkbox" id="cfg-ttssubonly" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                                <span class="text-xs text-slate-300">TTS only for Subscribers / Mods</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Stream Event Pop-up Banners</label>
-                        <label class="flex items-center space-x-3 cursor-pointer mb-3">
-                            <input type="checkbox" id="cfg-streamevents" checked onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Show Banner for Follows, Raids & Subs</span>
-                        </label>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Chat Sound Effects (SFX)</label>
-                        <label class="flex items-center space-x-3 cursor-pointer mb-3">
-                            <input type="checkbox" id="cfg-sfx" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Play subtle pop sound on new messages</span>
-                        </label>
-                        <div class="space-y-2">
-                            <label class="block text-xs text-slate-400">Keyword Sound Alerts (e.g. <code>!hype:pop, !alert:coin</code>)</label>
-                            <input type="text" id="cfg-sfx-keywords" placeholder="hype:coin, gg:pop" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500">
-                        </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Moderation & Censorship</label>
-                        <label class="flex items-center space-x-3 cursor-pointer mb-2">
-                            <input type="checkbox" id="cfg-censor" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800" checked>
-                            <span class="text-sm text-slate-300">Auto-censor profanity (****)</span>
-                        </label>
-                        <input type="text" id="cfg-blacklist" placeholder="badword1, spamword2" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500" value="badword1, spamword2">
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Highlight Keywords</label>
-                        <input type="text" id="cfg-keywords" placeholder="hype, pog, gg, win" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500" value="hype, pog">
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Custom CSS Injections</label>
-                        <p class="text-[11px] text-slate-400 mb-2">Inject custom CSS styling directly into the OBS browser source.</p>
-                        <textarea id="cfg-customcss" placeholder="/* e.g. .chat-bubble { backdrop-filter: blur(8px); } */" rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 focus:outline-none focus:border-purple-500"></textarea>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800/60 space-y-3">
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">New Content Filters</label>
-                        <label class="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" id="cfg-blocklinks" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800">
-                            <span class="text-sm text-slate-300">Auto-block / Mask URLs & Links</span>
-                        </label>
-                        <label class="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" id="cfg-blockbots" onchange="updateConfig()" class="w-4 h-4 rounded accent-purple-500 bg-slate-950 border-slate-800" checked>
-                            <span class="text-sm text-slate-300">Ignore Common Bot Commands (!commands)</span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- TAB 5: ANALYTICS & STATS -->
-                <div id="panel-analytics" class="space-y-5 hidden">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Live Session Stream Statistics</label>
-                        <p class="text-xs text-slate-400 mb-4">Real-time metrics calculated from incoming chat stream.</p>
-
-                        <div class="grid grid-cols-2 gap-3 mb-4">
-                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
-                                <span class="block text-2xl font-bold text-purple-400" id="stat-total-msgs">0</span>
-                                <span class="text-[10px] uppercase font-semibold text-slate-400">Total Messages</span>
-                            </div>
-                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
-                                <span class="block text-2xl font-bold text-emerald-400" id="stat-unique-chatters">0</span>
-                                <span class="text-[10px] uppercase font-semibold text-slate-400">Unique Chatters</span>
-                            </div>
-                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
-                                <span class="block text-2xl font-bold text-amber-400" id="stat-cheers">0</span>
-                                <span class="text-[10px] uppercase font-semibold text-slate-400">Cheer Events</span>
-                            </div>
-                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
-                                <span class="block text-2xl font-bold text-cyan-400" id="stat-active-rate">0/m</span>
-                                <span class="text-[10px] uppercase font-semibold text-slate-400">Activity Rate</span>
-                            </div>
-                        </div>
-
-                        <!-- Chat Velocity Chart Container -->
-                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 mb-4">
-                            <div class="flex items-center justify-between mb-2">
-                                <h4 class="text-xs font-semibold text-slate-300">Chat Velocity (Msgs / 10s)</h4>
-                                <span class="text-[10px] text-emerald-400 font-mono animate-pulse">● LIVE</span>
-                            </div>
-                            <div class="h-16 flex items-end space-x-1 pt-2 border-b border-slate-800/60 px-1" id="velocity-bars">
-                                <!-- Bars populated dynamically -->
-                            </div>
-                        </div>
-
-                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 mb-4">
-                            <h4 class="text-xs font-semibold text-slate-300">Top Active Chatter</h4>
-                            <p class="text-sm font-bold text-purple-300" id="stat-top-chatter">None yet</p>
-                        </div>
-
-                        <div>
-                            <button onclick="resetAnalytics()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-rose-300 text-xs font-medium rounded-lg transition">
-                                <i class="fa-solid fa-rotate-right mr-1.5"></i> Reset Statistics Counters
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB 6: SIMULATOR -->
-                <div id="panel-simulate" class="space-y-5 hidden">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Test Chat Simulator</label>
-                        <p class="text-xs text-slate-400 mb-4">Send test messages, cheers, or stream alerts to preview your layout.</p>
-                        
-                        <div class="space-y-3">
-                            <input type="text" id="sim-username" placeholder="Username" value="StreamViewer99" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">
-                            <textarea id="sim-message" placeholder="Type a test message..." rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500">Hey everyone! Loving the stream! Kappa ❤️</textarea>
-                            
-                            <!-- Quick Emote Selector -->
-                            <div>
-                                <label class="block text-[11px] text-slate-400 mb-1">Insert Twitch Emote:</label>
-                                <div class="flex flex-wrap gap-1.5">
-                                    <button onclick="insertEmote('Kappa')" class="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-purple-500 rounded text-xs">Kappa</button>
-                                    <button onclick="insertEmote('PogChamp')" class="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-purple-500 rounded text-xs">PogChamp</button>
-                                    <button onclick="insertEmote('LUL')" class="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-purple-500 rounded text-xs">LUL</button>
-                                    <button onclick="insertEmote('BibleThump')" class="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-purple-500 rounded text-xs">BibleThump</button>
-                                    <button onclick="insertEmote('❤️')" class="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-purple-500 rounded text-xs">❤️</button>
-                                    <button onclick="insertEmote('🔥')" class="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-purple-500 rounded text-xs">🔥</button>
-                                </div>
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-2 pt-1">
-                                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
-                                    <input type="checkbox" id="sim-is-mod" class="accent-purple-500">
-                                    <span>Mod Badge</span>
-                                </label>
-                                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
-                                    <input type="checkbox" id="sim-is-sub" class="accent-purple-500">
-                                    <span>Sub Badge</span>
-                                </label>
-                            </div>
-
-                            <div class="flex items-center space-x-2 pt-1">
-                                <label class="flex items-center space-x-2 text-xs text-amber-300 cursor-pointer">
-                                    <input type="checkbox" id="sim-is-cheer" class="accent-amber-500">
-                                    <span>Cheer Bits (100 bits)</span>
-                                </label>
-                            </div>
-
-                            <button onclick="sendSimulatedMessage()" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition shadow-md shadow-purple-600/20">
-                                Send Test Message
-                            </button>
-                            
-                            <div class="grid grid-cols-3 gap-2 pt-1">
-                                <button onclick="triggerSimulatedAlert('follow')" class="py-2 bg-slate-800 hover:bg-slate-700 text-purple-300 text-[11px] font-medium rounded-lg transition">Test Follow</button>
-                                <button onclick="triggerSimulatedAlert('sub')" class="py-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[11px] font-medium rounded-lg transition">Test Sub</button>
-                                <button onclick="triggerSimulatedAlert('raid')" class="py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-medium rounded-lg transition">Test Raid</button>
-                            </div>
-
-                            <button onclick="triggerSimulatedFlood()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition">
-                                Simulate Chat Flood (5msgs)
-                            </button>
-                            <button onclick="exportChatLog()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-purple-300 text-xs font-medium rounded-lg transition">
-                                <i class="fa-solid fa-download mr-1.5"></i> Export Chat Log (.json)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </aside>
-
-        <main class="flex-1 bg-slate-950 relative flex flex-col items-center justify-center p-6 overflow-hidden">
-            <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(#475569 1px, transparent 1px); background-size: 24px 24px;"></div>
-
-            <!-- CHAT TOP HEADER LABEL -->
-            <div class="mb-2 text-center select-none">
-                <span class="px-3 py-1 bg-purple-900/40 border border-purple-500/30 rounded-full text-[11px] font-bold tracking-widest text-purple-300 uppercase shadow-lg shadow-purple-950/50">
-                    <i class="fa-solid fa-comments mr-1.5 text-purple-400"></i> Twitch Live Chat Overlay
-                </span>
-            </div>
-
-            <div id="obs-viewport" class="w-full max-w-2xl h-[520px] bg-transparent border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative backdrop-blur-sm">
-                <div class="bg-slate-900/80 border-b border-slate-800/80 px-4 py-2 flex items-center justify-between text-[11px] text-slate-400 select-none shrink-0 z-20">
-                    <div class="flex items-center space-x-2">
-                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span class="font-medium text-slate-300">OBS Browser Source Preview</span>
-                    </div>
-                    <span>1920 x 1080 (Scaled)</span>
-                </div>
-
-                <!-- Event Banner Container -->
-                <div id="alert-banner-container" class="absolute top-12 left-0 right-0 z-30 px-4 pointer-events-none flex flex-col items-center space-y-2"></div>
-
-                <div id="chat-container" class="flex-1 p-5 overflow-y-auto flex flex-col justify-end space-y-3 relative z-10">
-                    <div class="chat-anim-fade flex items-start space-x-2.5 text-sm" style="color: #f1f5f9;">
-                        <span class="text-[11px] text-slate-400 mt-0.5 shrink-0 hidden timestamp-badge">12:00</span>
-                        <div class="chat-bubble flex-1 px-3.5 py-2 rounded-lg bg-slate-900/85 border border-purple-500/30 shadow-sm">
-                            <div class="flex items-center space-x-1.5 mb-0.5">
-                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white">MOD</span>
-                                <span class="font-bold text-purple-400">TwitchBot</span>
-                            </div>
-                            <p class="text-slate-100 break-words leading-relaxed">Welcome to TwitchChat Forge Pro+! Customize CSS, bits cheers, and voice alerts effortlessly.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <div id="export-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-200">
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl transform scale-95 transition-transform duration-200" id="modal-box">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-base font-bold text-slate-100 flex items-center space-x-2">
-                    <i class="fa-solid fa-link text-purple-500"></i>
-                    <span>Your OBS Browser Source URL</span>
-                </h3>
-                <button onclick="closeExportModal()" class="text-slate-400 hover:text-slate-200 p-1">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
-            
-            <p class="text-xs text-slate-400 mb-4">
-                Copy this URL and paste it directly into a new <strong class="text-slate-200">Browser Source</strong> in OBS Studio. All styles, cheers, and custom CSS are packed inside!
-            </p>
-
-            <div class="flex items-center space-x-2 mb-5">
-                <input type="text" id="export-url-input" readonly class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-purple-300 font-mono select-all focus:outline-none">
-                <button onclick="copyObsUrl()" class="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition flex items-center space-x-1.5 shrink-0">
-                    <i class="fa-solid fa-copy"></i>
-                    <span id="copy-btn-text">Copy URL</span>
-                </button>
-            </div>
-
-            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-2">
-                <h4 class="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
-                    <i class="fa-solid fa-circle-info text-purple-400"></i>
-                    <span>Recommended OBS Settings:</span>
-                </h4>
-                <ul class="text-[11px] text-slate-400 space-y-1 pl-4 list-disc">
-                    <li>Width: <strong class="text-slate-300">400px</strong> or <strong class="text-slate-300">500px</strong></li>
-                    <li>Height: <strong class="text-slate-300">800px</strong></li>
-                    <li>Check <strong class="text-slate-300">"Refresh browser when scene becomes active"</strong></li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        let currentTab = 'appearance';
-        let layoutStyle = 'bubble';
-        let chatDirection = 'bottom';
-        let ircSocket = null;
-        let chatHistoryLog = [];
-
-        // Analytics State
-        let sessionStats = {
-            totalMsgs: 0,
-            uniqueUsers: new Set(),
-            cheerCount: 0,
-            userMsgCounts: {},
-            velocityHistory: [2, 4, 1, 6, 8, 3, 5, 10, 7, 4],
-            startTime: Date.now()
-        };
-
-        const userColors = [
-            '#FF0000', '#0000FF', '#008000', '#B22222', '#FF7F50',
-            '#9ACD32', '#FF4500', '#2E8B57', '#DAA520', '#D2691E',
-            '#5F9EA0', '#1E90FF', '#FF69B4', '#8A2BE2', '#00FF7F'
-        ];
-
-        function switchTab(tab) {
-            currentTab = tab;
-            ['appearance', 'colors', 'behavior', 'advanced', 'analytics', 'simulate'].forEach(t => {
-                const btn = document.getElementById(`tab-${t}`);
-                const panel = document.getElementById(`panel-${t}`);
-                if (t === tab) {
-                    btn.className = "py-3 text-center border-b-2 border-purple-500 text-purple-400 transition";
-                    panel.classList.remove('hidden');
-                } else {
-                    btn.className = "py-3 text-center border-b-2 border-transparent hover:text-slate-200 transition";
-                    panel.classList.add('hidden');
-                }
-            });
-            if (tab === 'analytics') {
-                updateAnalyticsDisplay();
-                renderVelocityChart();
-            }
-        }
-
-        function insertEmote(emote) {
-            const msgBox = document.getElementById('sim-message');
-            msgBox.value += ' ' + emote;
-            msgBox.focus();
-        }
-
-        function updateAnalyticsDisplay() {
-            document.getElementById('stat-total-msgs').innerText = sessionStats.totalMsgs;
-            document.getElementById('stat-unique-chatters').innerText = sessionStats.uniqueUsers.size;
-            document.getElementById('stat-cheers').innerText = sessionStats.cheerCount;
-
-            const minutes = Math.max(1, Math.floor((Date.now() - sessionStats.startTime) / 60000));
-            document.getElementById('stat-active-rate').innerText = Math.round(sessionStats.totalMsgs / minutes) + '/m';
-
-            let topUser = 'None yet';
-            let maxCount = 0;
-            for (const [usr, cnt] of Object.entries(sessionStats.userMsgCounts)) {
-                if (cnt > maxCount) {
-                    maxCount = cnt;
-                    topUser = `${usr} (${cnt} msgs)`;
-                }
-            }
-            document.getElementById('stat-top-chatter').innerText = topUser;
-        }
-
-        function renderVelocityChart() {
-            const container = document.getElementById('velocity-bars');
-            if (!container) return;
-            container.innerHTML = '';
-            const maxVal = Math.max(...sessionStats.velocityHistory, 10);
-            sessionStats.velocityHistory.slice(-12).forEach(val => {
-                const bar = document.createElement('div');
-                const heightPct = Math.max(10, Math.round((val / maxVal) * 100));
-                bar.className = 'flex-1 bg-purple-500/80 hover:bg-purple-400 rounded-t transition-all';
-                bar.style.height = heightPct + '%';
-                bar.title = `${val} msgs`;
-                container.appendChild(bar);
-            });
-        }
-
-        function resetAnalytics() {
-            sessionStats = {
-                totalMsgs: 0,
-                uniqueUsers: new Set(),
-                cheerCount: 0,
-                userMsgCounts: {},
-                velocityHistory: [1, 2, 3, 2, 4],
-                startTime: Date.now()
-            };
-            updateAnalyticsDisplay();
-            renderVelocityChart();
-        }
-
-        function getUserColor(username) {
-            let hash = 0;
-            for (let i = 0; i < username.length; i++) {
-                hash = username.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            return userColors[Math.abs(hash) % userColors.length];
-        }
-
-        function setLayout(style) {
-            layoutStyle = style;
-            const bubbleBtn = document.getElementById('layout-bubble');
-            const cleanBtn = document.getElementById('layout-clean');
-            const bubbleOpts = document.getElementById('bubble-options');
-
-            if (style === 'bubble') {
-                bubbleBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
-                cleanBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
-                bubbleOpts.style.display = 'block';
-            } else {
-                cleanBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
-                bubbleBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
-                bubbleOpts.style.display = 'none';
-            }
-            updateConfig();
-        }
-
-        function setDirection(dir) {
-            chatDirection = dir;
-            const botBtn = document.getElementById('dir-bottom');
-            const topBtn = document.getElementById('dir-top');
-
-            if (dir === 'bottom') {
-                botBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
-                topBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
-            } else {
-                topBtn.className = "p-2.5 rounded-lg border border-purple-500 bg-purple-500/10 text-purple-300 text-xs font-medium text-center transition";
-                botBtn.className = "p-2.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs font-medium text-center transition";
-            }
-            updateConfig();
-        }
-
-        function updateConfig() {
-            const fontSize = document.getElementById('cfg-fontsize').value;
-            const opacity = document.getElementById('cfg-bg-opacity').value;
-            const radius = document.getElementById('cfg-radius').value;
-            const autoHideTime = document.getElementById('cfg-autohidetime').value;
-            const tssSpeed = document.getElementById('cfg-ttsspeed').value;
-
-            document.getElementById('val-fontsize').innerText = fontSize;
-            document.getElementById('val-opacity').innerText = opacity;
-            document.getElementById('val-radius').innerText = radius;
-            document.getElementById('val-autohidetime').innerText = autoHideTime;
-            document.getElementById('val-ttsspeed').innerText = tssSpeed;
-
-            const autoHideCheckbox = document.getElementById('cfg-autohide');
-            const autoHideSettings = document.getElementById('autohide-settings');
-            if (autoHideCheckbox.checked) {
-                autoHideSettings.classList.remove('opacity-50', 'pointer-events-none');
-            } else {
-                autoHideSettings.classList.add('opacity-50', 'pointer-events-none');
-            }
-
-            const ttsCheckbox = document.getElementById('cfg-tts');
-            const ttsSettings = document.getElementById('tts-settings');
-            if (ttsCheckbox.checked) {
-                ttsSettings.classList.remove('opacity-50', 'pointer-events-none');
-            } else {
-                ttsSettings.classList.add('opacity-50', 'pointer-events-none');
-            }
-        }
-
-        function toggleViewMode() {
-            const sidebar = document.querySelector('aside');
-            const header = document.querySelector('header');
-            const viewport = document.getElementById('obs-viewport');
-            const viewBtnText = document.getElementById('view-mode-text');
-
-            if (sidebar.style.display === 'none') {
-                sidebar.style.display = 'flex';
-                header.style.display = 'flex';
-                viewport.className = "w-full max-w-2xl h-[550px] bg-transparent border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative backdrop-blur-sm";
-                viewBtnText.innerText = "Test Simulator";
-            } else {
-                sidebar.style.display = 'none';
-                header.style.display = 'none';
-                viewport.className = "w-full h-full bg-transparent border-0 rounded-none shadow-none flex flex-col overflow-hidden relative";
-                viewBtnText.innerText = "Exit Preview";
-            }
-        }
-
-        function triggerSimulatedAlert(type) {
-            const container = document.getElementById('alert-banner-container');
-            if (!container) return;
-
-            const banner = document.createElement('div');
-            banner.className = 'alert-banner-anim bg-gradient-to-r from-purple-900/90 via-indigo-900/90 to-purple-900/90 border border-purple-500/50 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 max-w-md w-full backdrop-blur-md';
-            
-            let icon = 'fa-solid fa-heart text-rose-400';
-            let title = 'NEW FOLLOWER!';
-            let desc = 'GamerNinja99 just followed the channel!';
-
-            if (type === 'sub') {
-                icon = 'fa-solid fa-star text-emerald-400';
-                title = 'NEW SUBSCRIBER!';
-                desc = 'PixelHero subscribed at Tier 1 for 3 months!';
-            } else if (type === 'raid') {
-                icon = 'fa-solid fa-fire text-amber-400';
-                title = 'INCOMING RAID!';
-                desc = 'StreamQueen is raiding with 45 viewers!';
-            }
-
-            banner.innerHTML = `
-                <div class="p-2.5 bg-slate-950/60 rounded-lg text-lg"><i class="${icon}"></i></div>
-                <div class="flex-1">
-                    <h5 class="text-xs font-extrabold tracking-wider text-purple-300 uppercase">${title}</h5>
-                    <p class="text-xs text-slate-100 font-medium">${desc}</p>
-                </div>
-            `;
-
-            container.appendChild(banner);
-            setTimeout(() => {
-                banner.style.transition = 'all 0.4s ease-in';
-                banner.style.opacity = '0';
-                banner.style.transform = 'scale(0.9) translateY(-20px)';
-                setTimeout(() => banner.remove(), 400);
-            }, 4500);
-        }
-
-        function addMessage(username, message, isMod = false, isSub = false, isCheer = false) {
-            const container = document.getElementById('chat-container');
-            const font = document.getElementById('cfg-font').value;
-            const fontSize = document.getElementById('cfg-fontsize').value + 'px';
-            const textColor = document.getElementById('cfg-text-color').value;
-            const nameStyle = document.getElementById('cfg-namestyle').value;
-            const highlightColor = document.getElementById('cfg-highlight-color').value || '#a855f7';
-            const showTimestamps = document.getElementById('cfg-timestamps').checked;
-            const showBadges = document.getElementById('cfg-badges').checked;
-            const useShadow = document.getElementById('cfg-shadow').checked;
-            const useBorder = document.getElementById('cfg-border').checked;
-            const bgColor = document.getElementById('cfg-bg-color').value;
-            const bgOpacity = parseInt(document.getElementById('cfg-bg-opacity').value) / 100;
-            const radius = document.getElementById('cfg-radius').value + 'px';
-            const animType = document.getElementById('cfg-animation').value;
-            const autoHide = document.getElementById('cfg-autohide').checked;
-            const autoHideTime = parseInt(document.getElementById('cfg-autohidetime').value) * 1000;
-            const maxBuffer = parseInt(document.getElementById('cfg-maxbuffer').value);
-            const keywordsInput = document.getElementById('cfg-keywords').value.toLowerCase().trim();
-            const ttsEnabled = document.getElementById('cfg-tts').checked;
-            const ttsSpeed = parseFloat(document.getElementById('cfg-ttsspeed').value);
-            const ttsSubOnly = document.getElementById('cfg-ttssubonly').checked;
-            const sfxEnabled = document.getElementById('cfg-sfx').checked;
-            const sfxKeywords = document.getElementById('cfg-sfx-keywords').value;
-            const censorEnabled = document.getElementById('cfg-censor').checked;
-            const blacklistInput = document.getElementById('cfg-blacklist').value;
-            const blockLinks = document.getElementById('cfg-blocklinks').checked;
-            const blockBots = document.getElementById('cfg-blockbots').checked;
-
-            if (blockBots && (message.startsWith('!') || username.toLowerCase().includes('bot'))) {
-                return;
-            }
-
-            let processedMessage = message;
-            if (blockLinks) {
-                processedMessage = processedMessage.replace(/https?:\/\/[^\s]+/gi, '[link redacted]');
-            }
-
-            if (censorEnabled && blacklistInput) {
-                const badWords = blacklistInput.split(',').map(w => w.trim()).filter(w => w.length > 0);
-                badWords.forEach(word => {
-                    const regex = new RegExp(word, 'gi');
-                    processedMessage = processedMessage.replace(regex, '*'.repeat(word.length));
-                });
-            }
-
-            // Update stats
-            sessionStats.totalMsgs++;
-            sessionStats.uniqueUsers.add(username);
-            if (isCheer) sessionStats.cheerCount++;
-            sessionStats.userMsgCounts[username] = (sessionStats.userMsgCounts[username] || 0) + 1;
-            
-            // Push to velocity history
-            const currentLast = sessionStats.velocityHistory[sessionStats.velocityHistory.length - 1] || 1;
-            sessionStats.velocityHistory.push(currentLast + 1);
-
-            chatHistoryLog.push({ timestamp: new Date().toISOString(), username, message: processedMessage, isMod, isSub, isCheer });
-
-            let r = parseInt(bgColor.slice(1,3), 16);
-            let g = parseInt(bgColor.slice(3,5), 16);
-            let b = parseInt(bgColor.slice(5,7), 16);
-            const rgbaBg = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
-
-            let animClass = 'chat-anim-fade';
-            if (animType === 'pop') animClass = 'chat-anim-pop';
-            if (animType === 'none') animClass = '';
-            if (isCheer) animClass += ' cheer-highlight';
-
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `${animClass} flex items-start space-x-2.5 ${font}`;
-            msgDiv.style.fontSize = fontSize;
-            msgDiv.style.color = textColor;
-            if (useShadow) {
-                msgDiv.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
-            }
-
-            let timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            let timestampHtml = showTimestamps ? `<span class="text-[11px] text-slate-400 mt-0.5 shrink-0">${timeStr}</span>` : '';
-
-            let badgesHtml = '';
-            if (showBadges) {
-                if (isMod) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white mr-1 shadow-sm">MOD</span>`;
-                if (isSub) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white mr-1 shadow-sm">SUB</span>`;
-                if (isCheer) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 mr-1 shadow-sm"><i class="fa-solid fa-gem mr-1"></i> CHEER 100</span>`;
-            }
-
-            let userColor = getUserColor(username);
-            if (nameStyle === 'gradient') userColor = highlightColor;
-            if (nameStyle === 'accent') userColor = highlightColor;
-
-            let isHighlighted = isCheer;
-            if (keywordsInput) {
-                const keywords = keywordsInput.split(',').map(k => k.trim());
-                if (keywords.some(k => k && processedMessage.toLowerCase().includes(k))) {
-                    isHighlighted = true;
-                }
-            }
-
-            let borderColor = useBorder ? `border: 1px solid ${highlightColor}4D;` : 'border: 1px solid rgba(255,255,255,0.08);';
-            if (isCheer) {
-                borderColor = `border: 2px solid #f59e0b; box-shadow: 0 0 20px rgba(245,158,11,0.5); background-color: rgba(245, 158, 11, 0.08);`;
-            } else if (isHighlighted) {
-                borderColor = `border: 2px solid ${highlightColor}; box-shadow: 0 0 15px ${highlightColor}66;`;
-            }
-
-            let formattedContent = formatEmotesAndLinks(processedMessage);
-
-            let contentHtml = '';
-            if (layoutStyle === 'bubble') {
-                contentHtml = `
-                    ${timestampHtml}
-                    <div class="chat-bubble flex-1 px-3.5 py-2 rounded-[${radius}] shadow-sm" style="background-color: ${rgbaBg}; ${borderColor}">
-                        <div class="flex items-center space-x-1.5 mb-0.5">
-                            ${badgesHtml}
-                            <span class="font-bold" style="color: ${userColor}">${username}</span>
-                        </div>
-                        <p class="break-words leading-relaxed flex flex-wrap items-center gap-1" style="color: ${textColor}">${formattedContent}</p>
-                    </div>
-                `;
-            } else {
-                contentHtml = `
-                    ${timestampHtml}
-                    <div class="flex-1 leading-relaxed break-words">
-                        ${badgesHtml}
-                        <span class="font-bold mr-1.5" style="color: ${userColor}">${username}:</span>
-                        <span style="color: ${textColor}" class="inline-flex flex-wrap items-center gap-1">${formattedContent}</span>
-                    </div>
-                `;
-            }
-
-            msgDiv.innerHTML = contentHtml;
-
-            if (chatDirection === 'top') {
-                container.prepend(msgDiv);
-            } else {
-                container.appendChild(msgDiv);
-                container.scrollTop = container.scrollHeight;
-            }
-
-            if (ttsEnabled && 'speechSynthesis' in window) {
-                if (!ttsSubOnly || isMod || isSub) {
-                    const utterance = new SpeechSynthesisUtterance(`${username} says: ${message}`);
-                    utterance.rate = ttsSpeed;
-                    window.speechSynthesis.speak(utterance);
-                }
-            }
-
-            if (autoHide) {
-                setTimeout(() => {
-                    msgDiv.classList.remove(animClass);
-                    msgDiv.classList.add('chat-message-out');
-                    setTimeout(() => msgDiv.remove(), 200);
-                }, autoHideTime);
-            }
-
-            if (container.children.length > maxBuffer) {
-                container.removeChild(container.firstChild);
-            }
-        }
-
-        function formatEmotesAndLinks(text) {
-            const emoteMap = {
-                'Kappa': 'https://static-cdn.jtvnw.net/emoticons/v2/19/default/dark/1.0',
-                'PogChamp': 'https://static-cdn.jtvnw.net/emoticons/v2/305954156/default/dark/1.0',
-                'LUL': 'https://static-cdn.jtvnw.net/emoticons/v2/425618/default/dark/1.0',
-                'BibleThump': 'https://static-cdn.jtvnw.net/emoticons/v2/86/default/dark/1.0',
-                'NotLikeThis': 'https://static-cdn.jtvnw.net/emoticons/v2/58765/default/dark/1.0',
-                'FeelsGoodMan': 'https://static-cdn.jtvnw.net/emoticons/v2/30259/default/dark/1.0',
-                '❤️': '❤️',
-                '🔥': '🔥'
-            };
-
-            const words = text.split(' ');
-            return words.map(word => {
-                if (emoteMap[word]) {
-                    if (word.startsWith('http') || word.length <= 2) {
-                        return `<span>${escapeHtml(word)}</span>`;
-                    }
-                    return `<img src="${emoteMap[word]}" alt="${word}" title="${word}" class="inline-block h-5 w-auto mx-0.5 align-text-bottom" onerror="this.outerHTML='${escapeHtml(word)}'">`;
-                }
-                return `<span>${escapeHtml(word)}</span>`;
-            }).join(' ');
-        }
-
-        function escapeHtml(text) {
-            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-
-        function sendSimulatedMessage() {
-            const user = document.getElementById('sim-username').value || 'StreamViewer';
-            const msg = document.getElementById('sim-message').value || 'Hello streamer!';
-            const isMod = document.getElementById('sim-is-mod').checked;
-            const isSub = document.getElementById('sim-is-sub').checked;
-            const isCheer = document.getElementById('sim-is-cheer').checked;
-            addMessage(user, msg, isMod, isSub, isCheer);
-        }
-
-        function triggerSimulatedFlood() {
-            const sampleUsers = ['PixelGamer', 'RetroQueen', 'SleeplessCoder', 'NerdNinja', 'CoffeeAddict'];
-            const sampleMsgs = [
-                'Let\'s goooo! 🔥',
-                'Amazing gameplay right there!',
-                'Can you play that song again?',
-                'LOL that was hilarious 😂',
-                'GG in the chat boys'
-            ];
-            let i = 0;
-            const interval = setInterval(() => {
-                if (i >= sampleUsers.length) {
-                    clearInterval(interval);
-                    return;
-                }
-                addMessage(sampleUsers[i], sampleMsgs[i], i === 0, i % 2 === 0, i === 2);
-                i++;
-            }, 400);
-        }
-
-        function exportChatLog() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(chatHistoryLog, null, 2));
-            const dlAnchorElem = document.createElement('a');
-            dlAnchorElem.setAttribute("href", dataStr);
-            dlAnchorElem.setAttribute("download", "twitch_chat_log.json");
-            document.body.appendChild(dlAnchorElem);
-            dlAnchorElem.click();
-            dlAnchorElem.remove();
-        }
-
-        function parseIrcMessage(rawMessage) {
-            let username = "Viewer";
-            let chatText = "";
-            let isMod = false;
-            let isSub = false;
-            let isCheer = false;
-
-            try {
-                if (rawMessage.includes('PRIVMSG')) {
-                    if (rawMessage.includes('mod=1') || rawMessage.includes('badges=moderator') || rawMessage.includes('badges=mod/')) isMod = true;
-                    if (rawMessage.includes('subscriber=1') || rawMessage.includes('badges=subscriber')) isSub = true;
-                    if (rawMessage.includes('bits=')) isCheer = true;
-
-                    const userMatch = rawMessage.match(/:([^!]+)!/);
-                    if (userMatch) username = userMatch[1];
-
-                    const parts = rawMessage.split('PRIVMSG');
-                    if (parts.length > 1) {
-                        const trailing = parts[1].split(':');
-                        if (trailing.length > 1) {
-                            chatText = trailing.slice(1).join(':').trim();
-                        }
-                    }
-                }
-            } catch (e) {}
-            return { username, chatText, isMod, isSub, isCheer };
-        }
-
-        function connectTwitch() {
-            const channel = document.getElementById('cfg-channel').value.trim().toLowerCase();
-            const statusEl = document.getElementById('connection-status');
-            if (!channel) {
-                statusEl.innerText = "Status: Please enter a valid channel name.";
-                statusEl.className = "text-[11px] text-rose-400 mt-2";
-                return;
-            }
-
-            statusEl.innerText = `Status: Connecting to ${channel}...`;
-            statusEl.className = "text-[11px] text-amber-400 mt-2";
-
-            if (window.twitchInterval) clearInterval(window.twitchInterval);
-            if (ircSocket) { try { ircSocket.close(); } catch(e) {} }
-
-            try {
-                ircSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-
-                ircSocket.onopen = () => {
-                    ircSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-                    ircSocket.send('NICK justinfan' + Math.floor(Math.random() * 80000));
-                    ircSocket.send('JOIN #' + channel);
-                    statusEl.innerText = `Status: Connected to #${channel}! Watching live messages...`;
-                    statusEl.className = "text-[11px] text-emerald-400 mt-2";
-                };
-
-                ircSocket.onmessage = (event) => {
-                    const lines = event.data.split('\r\n');
-                    lines.forEach(line => {
-                        if (!line) return;
-                        if (line.startsWith('PING')) {
-                            ircSocket.send('PONG ' + line.split(' ')[1]);
-                            return;
-                        }
-                        if (line.includes('PRIVMSG')) {
-                            const parsed = parseIrcMessage(line);
-                            if (parsed.chatText) {
-                                addMessage(parsed.username, parsed.chatText, parsed.isMod, parsed.isSub, parsed.isCheer);
-                            }
-                        }
-                    });
-                };
-
-                ircSocket.onerror = () => {
-                    activateLiveSimulator(channel, statusEl);
-                };
-            } catch (err) {
-                activateLiveSimulator(channel, statusEl);
-            }
-        }
-
-        function activateLiveSimulator(channel, statusEl) {
-            statusEl.innerText = `Status: Sandbox restricted direct WS. Running live stream simulation for #${channel}`;
-            statusEl.className = "text-[11px] text-purple-400 mt-2";
-
-            const mockSenders = [
-                { name: "AlphaGamer", mod: true, sub: true, cheer: false, msgs: ["Let's go stream!", "Great gameplay!", "PogChamp 🚀"] },
-                { name: "PixelArtist", mod: false, sub: true, cheer: true, msgs: ["Cheering 100 bits! Amazing run!", "Love this layout!"] },
-                { name: "CoffeeLover", mod: false, sub: false, cheer: false, msgs: ["First time chatter here!", "Any tips for beginners?", "LOL 😂"] },
-                { name: "StreamFan99", mod: false, sub: true, cheer: false, msgs: ["Sub train incoming! Kappa", "GGs in the chat"] }
-            ];
-
-            window.twitchInterval = setInterval(() => {
-                const sender = mockSenders[Math.floor(Math.random() * mockSenders.length)];
-                const msg = sender.msgs[Math.floor(Math.random() * sender.msgs.length)];
-                addMessage(sender.name, msg, sender.mod, sender.sub, sender.cheer);
-            }, 3500);
-        }
-
-        function openExportModal() {
-            const modal = document.getElementById('export-modal');
-            const modalBox = document.getElementById('modal-box');
-            
-            const font = document.getElementById('cfg-font').value;
-            const fontSize = document.getElementById('cfg-fontsize').value;
-            const textColor = document.getElementById('cfg-text-color').value.replace('#', '');
-            const nameStyle = document.getElementById('cfg-namestyle').value;
-            const highlightColor = document.getElementById('cfg-highlight-color').value.replace('#', '');
-            const showTimestamps = document.getElementById('cfg-timestamps').checked;
-            const showBadges = document.getElementById('cfg-badges').checked;
-            const useShadow = document.getElementById('cfg-shadow').checked;
-            const useBorder = document.getElementById('cfg-border').checked;
-            const bgColor = document.getElementById('cfg-bg-color').value.replace('#', '');
-            const bgOpacity = document.getElementById('cfg-bg-opacity').value;
-            const radius = document.getElementById('cfg-radius').value;
-            const animType = document.getElementById('cfg-animation').value;
-            const autoHide = document.getElementById('cfg-autohide').checked;
-            const autoHideTime = document.getElementById('cfg-autohidetime').value;
-            const maxBuffer = document.getElementById('cfg-maxbuffer').value;
-            const channel = document.getElementById('cfg-channel').value.trim();
-            const keywords = document.getElementById('cfg-keywords').value;
-            const tts = document.getElementById('cfg-tts').checked;
-            const ttsSpeed = document.getElementById('cfg-ttsspeed').value;
-            const ttsSubOnly = document.getElementById('cfg-ttssubonly').checked;
-            const sfx = document.getElementById('cfg-sfx').checked;
-            const sfxKeywords = document.getElementById('cfg-sfx-keywords').value;
-            const censor = document.getElementById('cfg-censor').checked;
-            const blacklist = document.getElementById('cfg-blacklist').value;
-            const blocklinks = document.getElementById('cfg-blocklinks').checked;
-            const blockbots = document.getElementById('cfg-blockbots').checked;
-            const customcss = encodeURIComponent(document.getElementById('cfg-customcss').value);
-
-            const params = new URLSearchParams({
-                font, fontSize, textColor, nameStyle, highlightColor, layout: layoutStyle, direction: chatDirection,
-                timestamps: showTimestamps, badges: showBadges, shadow: useShadow, border: useBorder,
-                bgColor, bgOpacity, radius, animType, autoHide, autoHideTime, maxBuffer, channel, keywords,
-                tts, ttsSpeed, ttsSubOnly, sfx, sfxKeywords, censor, blacklist, blocklinks, blockbots, customcss
-            });
-
-            const currentUrl = window.location.href.split('?')[0];
-            const obsUrl = `${currentUrl}?${params.toString()}&obs=true`;
-
-            document.getElementById('export-url-input').value = obsUrl;
-
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                modal.classList.remove('opacity-0');
-                modalBox.classList.remove('scale-95');
-                modalBox.classList.add('scale-100');
-            }, 10);
-        }
-
-        function closeExportModal() {
-            const modal = document.getElementById('export-modal');
-            const modalBox = document.getElementById('modal-box');
-            modal.classList.add('opacity-0');
-            modalBox.classList.remove('scale-100');
-            modalBox.classList.add('scale-95');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 200);
-        }
-
-        function copyObsUrl() {
-            const input = document.getElementById('export-url-input');
-            input.select();
-            document.execCommand('copy');
-            
-            const btnText = document.getElementById('copy-btn-text');
-            btnText.innerText = "Copied!";
-            setTimeout(() => {
-                btnText.innerText = "Copy URL";
-            }, 2000);
-        }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('obs') === 'true') {
-                document.body.innerHTML = `
-                    <div id="chat-container" class="w-full h-full p-4 overflow-hidden flex flex-col justify-end space-y-2.5 bg-transparent"></div>
-                `;
-
-                const font = urlParams.get('font') || 'font-inter';
-                const fontSize = (urlParams.get('fontSize') || '14') + 'px';
-                const textColor = '#' + (urlParams.get('textColor') || 'f1f5f9');
-                const nameStyle = urlParams.get('nameStyle') || 'twitch';
-                const highlightColor = '#' + (urlParams.get('highlightColor') || 'a855f7');
-                layoutStyle = urlParams.get('layout') || 'bubble';
-                chatDirection = urlParams.get('direction') || 'bottom';
-                const showTimestamps = urlParams.get('timestamps') === 'true';
-                const showBadges = urlParams.get('badges') === 'true';
-                const useShadow = urlParams.get('shadow') === 'true';
-                const useBorder = urlParams.get('border') === 'true';
-                const bgColor = '#' + (urlParams.get('bgColor') || '0f172a');
-                const bgOpacity = parseInt(urlParams.get('bgOpacity') || '85') / 100;
-                const radius = (urlParams.get('radius') || '8') + 'px';
-                const animType = urlParams.get('animType') || 'fade';
-                const autoHide = urlParams.get('autoHide') === 'true';
-                const autoHideTime = parseInt(urlParams.get('autoHideTime') || '30') * 1000;
-                const maxBuffer = parseInt(urlParams.get('maxBuffer') || '50');
-                const channel = urlParams.get('channel') || '';
-                const keywordsInput = (urlParams.get('keywords') || '').toLowerCase().trim();
-                const ttsEnabled = urlParams.get('tts') === 'true';
-                const ttsSpeed = parseFloat(urlParams.get('ttsSpeed') || '1.0');
-                const ttsSubOnly = urlParams.get('ttsSubOnly') === 'true';
-                const sfxEnabled = urlParams.get('sfx') === 'true';
-                const sfxKeywords = urlParams.get('sfxKeywords') || '';
-                const censorEnabled = urlParams.get('censor') === 'true';
-                const blacklistInput = urlParams.get('blacklist') || '';
-                const blockLinks = urlParams.get('blocklinks') === 'true';
-                const blockBots = urlParams.get('blockbots') === 'true';
-                const customCss = decodeURIComponent(urlParams.get('customcss') || '');
-
-                if (customCss) {
-                    const styleTag = document.createElement('style');
-                    styleTag.innerHTML = customCss;
-                    document.head.appendChild(styleTag);
-                }
-
-                if (font === 'font-poppins') {
-                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">');
-                } else if (font === 'font-mono') {
-                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">');
-                } else if (font === 'font-arcade') {
-                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">');
-                } else if (font === 'font-outfit') {
-                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">');
-                } else if (font === 'font-cinzel') {
-                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&display=swap" rel="stylesheet">');
-                } else if (font === 'font-marker') {
-                    document.head.insertAdjacentHTML('beforeend', '<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">');
-                }
-
-                if (channel) {
-                    try {
-                        const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-                        ws.onopen = () => {
-                            ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-                            ws.send('NICK justinfan' + Math.floor(Math.random() * 80000));
-                            ws.send('JOIN #' + channel.toLowerCase());
-                        };
-                        ws.onmessage = (event) => {
-                            const message = event.data;
-                            if (message.startsWith('PING')) {
-                                ws.send('PONG ' + message.split(' ')[1]);
-                                return;
-                            }
-                            if (message.includes('PRIVMSG')) {
-                                const parsed = parseIrcMessage(message);
-                                if (parsed.chatText) {
-                                    appendObsMessage(parsed.username, parsed.chatText, parsed.isMod, parsed.isSub, parsed.isCheer);
-                                }
-                            }
-                        };
-                        ws.onerror = () => {
-                            startObsSimulator();
-                        };
-                    } catch (e) {
-                        startObsSimulator();
-                    }
-                } else {
-                    setTimeout(() => appendObsMessage("StreamKnight", "Hello OBS stream! Kappa 🔥", false, true, false), 500);
-                    setTimeout(() => appendObsMessage("DonationKing", "Cheering 100 bits! Let's gooo!", false, false, true), 1500);
-                }
-
-                function startObsSimulator() {
-                    const mockUsers = ["ChatterAlpha", "ViperStream", "NerdNinja", "PixelQueen", "RetroGamer"];
-                    const mockTexts = ["Let's gooo! LUL", "Amazing overlay!", "Can you play that game again?", "GG WP PogChamp!", "Hello from chat! 👋"];
-                    setInterval(() => {
-                        const u = mockUsers[Math.floor(Math.random() * mockUsers.length)];
-                        const t = mockTexts[Math.floor(Math.random() * mockTexts.length)];
-                        appendObsMessage(u, t, Math.random() > 0.7, Math.random() > 0.5, Math.random() > 0.8);
-                    }, 3000);
-                }
-
-                function appendObsMessage(username, message, isMod, isSub, isCheer) {
-                    const container = document.getElementById('chat-container');
-
-                    let processedMessage = message;
-                    if (censorEnabled && blacklistInput) {
-                        const badWords = blacklistInput.split(',').map(w => w.trim()).filter(w => w.length > 0);
-                        badWords.forEach(word => {
-                            const regex = new RegExp(word, 'gi');
-                            processedMessage = processedMessage.replace(regex, '*'.repeat(word.length));
-                        });
-                    }
-
-                    let r = parseInt(bgColor.slice(1,3), 16);
-                    let g = parseInt(bgColor.slice(3,5), 16);
-                    let b = parseInt(bgColor.slice(5,7), 16);
-                    const rgbaBg = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
-
-                    let animClass = 'chat-anim-fade';
-                    if (animType === 'pop') animClass = 'chat-anim-pop';
-                    if (animType === 'none') animClass = '';
-                    if (isCheer) animClass += ' cheer-highlight';
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `${animClass} flex items-start space-x-2.5 ${font}`;
-                    msgDiv.style.fontSize = fontSize;
-                    msgDiv.style.color = textColor;
-                    if (useShadow) {
-                        msgDiv.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
-                    }
-
-                    let timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    let timestampHtml = showTimestamps ? `<span class="text-[11px] text-slate-400 mt-0.5 shrink-0">${timeStr}</span>` : '';
-
-                    let badgesHtml = '';
-                    if (showBadges) {
-                        if (isMod) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-700 text-white mr-1 shadow-sm">MOD</span>`;
-                        if (isSub) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white mr-1 shadow-sm">SUB</span>`;
-                        if (isCheer) badgesHtml += `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 mr-1 shadow-sm"><i class="fa-solid fa-gem mr-1"></i> CHEER 100</span>`;
-                    }
-
-                    let userColor = getUserColor(username);
-                    if (nameStyle === 'gradient') userColor = highlightColor;
-                    if (nameStyle === 'accent') userColor = highlightColor;
-
-                    let isHighlighted = isCheer;
-                    if (keywordsInput) {
-                        const keywords = keywordsInput.split(',').map(k => k.trim());
-                        if (keywords.some(k => k && processedMessage.toLowerCase().includes(k))) {
-                            isHighlighted = true;
-                        }
-                    }
-
-                    let borderColor = useBorder ? `border: 1px solid ${highlightColor}4D;` : 'border: 1px solid rgba(255,255,255,0.08);';
-                    if (isCheer) {
-                        borderColor = `border: 2px solid #f59e0b; box-shadow: 0 0 20px rgba(245,158,11,0.5); background-color: rgba(245, 158, 11, 0.08);`;
-                    } else if (isHighlighted) {
-                        borderColor = `border: 2px solid ${highlightColor}; box-shadow: 0 0 15px ${highlightColor}66;`;
-                    }
-
-                    let formattedContent = formatEmotesAndLinks(processedMessage);
-
-                    if (layoutStyle === 'bubble') {
-                        msgDiv.innerHTML = `
-                            ${timestampHtml}
-                            <div class="chat-bubble flex-1 px-3.5 py-2 rounded-[${radius}] shadow-sm" style="background-color: ${rgbaBg}; ${borderColor}">
-                                <div class="flex items-center space-x-1.5 mb-0.5">
-                                    ${badgesHtml}
-                                    <span class="font-bold" style="color: ${userColor}">${username}</span>
-                                </div>
-                                <p class="break-words leading-relaxed flex flex-wrap items-center gap-1" style="color: ${textColor}">${formattedContent}</p>
-                            </div>
-                        `;
-                    } else {
-                        msgDiv.innerHTML = `
-                            ${timestampHtml}
-                            <div class="flex-1 leading-relaxed break-words">
-                                ${badgesHtml}
-                                <span class="font-bold mr-1.5" style="color: ${userColor}">${username}:</span>
-                                <span style="color: ${textColor}" class="inline-flex flex-wrap items-center gap-1">${formattedContent}</span>
-                            </div>
-                        `;
-                    }
-
-                    if (chatDirection === 'top') {
-                        container.prepend(msgDiv);
-                    } else {
-                        container.appendChild(msgDiv);
-                        container.scrollTop = container.scrollHeight;
-                    }
-
-                    if (ttsEnabled && 'speechSynthesis' in window) {
-                        if (!ttsSubOnly || isMod || isSub) {
-                            const utterance = new SpeechSynthesisUtterance(`${username} says: ${message}`);
-                            utterance.rate = ttsSpeed;
-                            window.speechSynthesis.speak(utterance);
-                        }
-                    }
-
-                    if (autoHide) {
-                        setTimeout(() => {
-                            msgDiv.classList.remove(animClass);
-                            msgDiv.classList.add('chat-message-out');
-                            setTimeout(() => msgDiv.remove(), 200);
-                        }, autoHideTime);
-                    }
-
-                    if (container.children.length > maxBuffer) {
-                        container.removeChild(container.firstChild);
-                    }
+                    setTimeout(() => appendObsMessageDirect("StreamKnight", "Hello OBS stream! Kappa 🔥", false, true, false, obsSettings), 500);
+                    setTimeout(() => appendObsMessageDirect("DonationKing", "Cheering 100 bits! Let's gooo!", false, false, true, obsSettings), 1500);
                 }
             }
         });
